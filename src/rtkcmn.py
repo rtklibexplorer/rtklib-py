@@ -29,8 +29,12 @@ nmf_coef = np.array([
     [4.3472961E-2, 4.6729510E-2, 4.3908931E-2, 4.4626982E-2, 5.4736038E-2]])
 nmf_aht = [2.53E-5, 5.49E-3, 1.14E-3] # height correction
 
-# global parameters
+# global defines
 DTTOL = 0.025
+SOLQ_NONE = 0
+SOLQ_FIX = 1
+SOLQ_FLOAT = 2
+SOLQ_SINGLE = 5
 
 class rCST():
     """ class for constants """
@@ -190,7 +194,8 @@ class Nav():
         self.excl_sat = cfg.excl_sat
         self.freq = cfg.freq 
         self.rb = [0, 0, 0]  # base station position in ECEF [m]
-        self.smode = 0  # position mode 0:NONE,1:fix,2:float,5:single
+        self.rr = [0, 0, 0]
+        self.stat = SOLQ_NONE   
         self.gnss_t = cfg.gnss_t
         self.cnr_min = cfg.cnr_min
         self.maxout = cfg.maxout  # maximum outage [epoch]
@@ -224,7 +229,7 @@ class Sol():
           self.rr = np.zeros(6)
           self.qr = np.zeros((3,3))
           self.qv = np.zeros((3,3))
-          self.smode = 0
+          self.stat = SOLQ_NONE
           self.ns = 0
           self.age = 0
           self.ratio = 0
@@ -570,10 +575,7 @@ def satazel(pos, e):
         enu = ecef2enu(pos, e)
         az = atan2(enu[0], enu[1]) if np.dot(enu, enu) > 1e-12 else 0
         az = az if az > 0 else az + 2 * np.pi
-        try:
-            el = asin(enu[2])
-        except:
-            xxx=1
+        el = asin(enu[2])
         return az, el
     else:
         return 0, np.pi / 2

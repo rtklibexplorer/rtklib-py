@@ -161,6 +161,10 @@ class rnx_decode:
 
                 for k in range(self.nsig[sys]):
                     sig = s[4*k:3+4*k]
+                    if sig[1:3] not in self.sig_tbl:
+                        continue
+                    if self.sig_tbl[sig[1:3]] in self.skip_sig_tbl[sys]:
+                        continue
                     if sig[0] == 'C':
                         self.typeid[sys][k] = 0
                     elif sig[0] == 'L':
@@ -171,10 +175,7 @@ class rnx_decode:
                         self.typeid[sys][k] = 3
                     else:
                         continue
-                    if sig[1:3] in self.sig_tbl:
-                        if self.sig_tbl[sig[1:3]] in self.skip_sig_tbl[sys]:
-                            continue
-                        self.sigid[sys][k] = self.sig_tbl[sig[1:3]]
+                    self.sigid[sys][k] = self.sig_tbl[sig[1:3]]
                 self.nband[sys] = len(np.where(self.typeid[sys]==1)[0])
         return 0
 

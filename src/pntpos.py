@@ -8,6 +8,7 @@ import numpy as np
 from numpy.linalg import norm, lstsq
 from rtkcmn import rCST, ecef2pos, geodist, satazel, ionmodel, tropmodel, \
      Sol, tropmapf, uGNSS, trace, timeadd
+import rtkcmn as gn
 from ephemeris import seleph, satposs
 from rinex import rcvstds
 
@@ -143,8 +144,9 @@ def estpos(obs, nav, rs, dts, svh):
         if norm(dx) < 1e-4:
             break
     else: # exceeded max iterations
+        sol.stat = gn.SOLQ_NONE
         trace(3, 'estpos: solution did not converge\n')
-    sol.smode = 5
+    sol.stat = gn.SOLQ_SINGLE
     sol.t = timeadd(obs.t, -x[3] / rCST.CLIGHT )
     sol.dtr = x[3:5] / rCST.CLIGHT
     sol.rr[0:3] = x[0:3]

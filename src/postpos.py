@@ -1,7 +1,7 @@
 """
  post-processing solution from rinex data
 """
-from copy import deepcopy
+from copy import copy, deepcopy
 
 from rtkpos import rtkpos, rtkinit
 import __ppk_config as cfg
@@ -19,11 +19,11 @@ def combres(solf, solb):
             sol = deepcopy(solf[i])
             j += 1
         elif tt > gn.DTTOL:
-            sol = deepcopy(solb[i])
+            sol = deepcopy(solb[j])
             i -= 1
-        elif solf[i].smode < solb[j].smode:
+        elif solf[i].stat < solb[j].stat:
             sol = deepcopy(solf[i])
-        elif solf[i].smode > solb[j].smode:
+        elif solf[i].stat > solb[j].stat:
             sol = deepcopy(solb[i]) 
         else:
             sol = deepcopy(solf[i])
@@ -40,10 +40,11 @@ def firstpos(nav, rov, base, dir):
     obsr, obsb = rn.first_obs(nav, rov, base, dir)
     sol = pntpos(obsr, nav)
     # repeat until get solution
-    while sol.smode == 0:
+    while sol.stat == gn.SOLQ_NONE:
         obsr, obsb = rn.next_obs(nav, rov, base, dir)
         sol = pntpos(obsr, nav)
-    nav.x[0:6] = sol.rr[0:6]
+    nav.x[0:6] = copy(sol.rr[0:6])
+    nav.rr[0:3] = copy(sol.rr[0:3])
 
     
 def savesol(sol, solfile):
@@ -58,7 +59,7 @@ def savesol(sol, solfile):
                 fmt = '%4d %10.3f %14.9f %14.9f %10.4f %3d %3d %8.4f' + \
                     '  %8.4f %8.4f %8.4f %8.4f %8.4f %6.2f %6.1f\n'
                 outfile.write(fmt % (wk, sec, llh[0]/D2R, llh[1]/D2R, llh[2], 
-                    s.smode, s.ns, s.qr[0,0], s.qr[1,1], s.qr[2,2], s.qr[0,1],
+                    s.stat, s.ns, s.qr[0,0], s.qr[1,1], s.qr[2,2], s.qr[0,1],
                     s.qr[1,2], s.qr[2,0], s.age, s.ratio))
 
 def procpos(nav, rov, base):

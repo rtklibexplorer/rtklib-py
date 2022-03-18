@@ -17,20 +17,14 @@ import __ppk_config as cfg
 #rom ppp import tidedisp
 
 MAX_VAR_EPH = 300**2
-FIX_MODE = 1
-FLOAT_MODE = 2
-
 
 def rtkinit(cfg):
     nav = gn.Nav(cfg)
-    
-    """" initialize standard solution """
-    #nav.sing = stdinit(cfg)
-    """ initalize RTK-GNSS parameters """
+    """ initalize RTK-GNSS parameters from config file """
     nav.nf = cfg.nf
     nav.pmode = cfg.pmode
     nav.filtertype = cfg.filtertype
-
+    # add rover vel and accel states for kinematic solution
     nav.na = nav.nq = 3 if nav.pmode == 'static' else 9
     nav.ratio = 0
     nav.thresar = [cfg.thresar]
@@ -47,7 +41,6 @@ def rtkinit(cfg):
     nav.nfix = nav.neb = nav.db = nav.tt = 0
     
     nav.rb = cfg.rb
-    #nav.rr = cfg.rr
 
     # parameter for RTK/PPK    
     nav.eratio = cfg.eratio
@@ -269,7 +262,7 @@ def ddres(nav, x, y, e, sat, el, dt, obsr):
             nozero = np.where(y[:ns,f] != 0 & (y[ns:2*ns,f] != 0))[0]
             idx = np.intersect1d(idx, nozero)
             if len(idx) == 0: continue  # no common sats
-            # # find sat with max el and no slip for reference
+            # TODO: find sat with max el and no slip for reference
             # noslip=idx[np.where(nav.slip[sat[idx]-1,frq]==0)[0]]
             # idx_noslip = np.intersect1d(idx, noslip)
             # if len(idx_noslip) > 0:
@@ -477,12 +470,7 @@ def detslp_dop(rcv, nav, obs, ix):
             # calc phase difference and doppler x time (cycle)
             dph = obs.L[ii,f] - nav.ph[rcv,sat,f]
             dpt = -obs.D[ii,f] * tt[i,f]
-            # ignore doppler sign due to inconsistencies in sign of doppler/phaserangerate msmts 
-            # method 2/19  TODO, decide which is better
-            #dopdif[i,j] = dph - dpt if np.sign(dph) == np.sign(dpt) else dph + dpt
-            #dopdif[i,j] /= tt[i,j];
-            # method 1/20
-            dopdif[i,f] = (abs(dph) - abs(dpt)) / tt[i,f]
+            dopdif[i,f] = (dph-dpt) / tt[i,f]
 
             # if not outlier, use this to calculate mean
             if abs(dopdif[i,f]) < 3 * nav.thresdop:
@@ -551,10 +539,7 @@ def udpos(nav):
     tt = nav.tt
     trace(3, 'udpos : tt=%.3f\n' % tt)
     
-    # kinmatic mode without dynamics
-    if nav.na == 3:  
-        for i in range(3):
-            initx(nav, nav.sol[-1].rr[i], nav.sig_p0**2, i)
+    if nav.pmode == 'static':
         return
     
     # check variance of estimated position
@@ -562,8 +547,8 @@ def udpos(nav):
     if posvar > nav.sig_p0**2:
         #reset position with large variance
         for i in range(3):
-            initx(nav, nav.sol[-1].rr[i], nav.sig_p0**2, i)
-            initx(nav, nav.sol[-1].rr[i + 3], nav.sig_v0**2, i + 3)
+            initx(nav, nav.rr[i], nav.sig_p0**2, i)
+            initx(nav, 0, nav.sig_v0**2, i + 3)
             initx(nav, 1e-6, nav.sig_v0**2, i + 6)
         trace(2, 'reset rtk position due to large variance: var=%.3f\n' % posvar)
         return
@@ -572,13 +557,9 @@ def udpos(nav):
     F = np.eye(nav.nx)
     F[0:6, 3:9] += np.eye(6) * tt
     # include accel terms if filter is converged
-    accelh = norm(nav.x[6:8])
-    trace(3,'posvar=%.4f accelh=%.4f accelv=%.4f\n' % (posvar, accelh, nav.x[8]))
-    if accelh < 3 * nav.accelh and nav.x[8] < nav.accelv:
+    if posvar < nav.thresar1:
         F[3:6, 6:9] += np.eye(3) * tt**2 / 2
     else:
-        #for i in range(3):   # TODO,do we want this?
-        #    initx(nav, 1e-6, nav.sig_v0**2, i + 6)
         trace(3, 'ignore high accel: %.4f\n' % posvar)
     # x=F*x, P=F*P*F
     nav.x = F @ nav.x
@@ -735,7 +716,7 @@ def holdamb(nav, xa):
         nav.x, nav.P, _ = gn.filter(nav.x, nav.P, H[0:nv, :], v[0:nv], R)
     return 0
 
-def relpos(nav, obsr, obsb):
+def relpos(nav, obsr, obsb, sol):
     """ relative positioning for PPK """
     
     # time diff between rover and base
@@ -762,7 +743,7 @@ def relpos(nav, obsr, obsb):
         trace(3, 'no common sats: %d\n' % ns)
         return
     
-    # Kalman filter time propagation
+    # kalman filter time propagation
     udstate(nav, obsr, obsb, iu, ir)
 
     # undifferenced residuals for rover
@@ -782,43 +763,43 @@ def relpos(nav, obsr, obsb):
     
     # double differenced residuals
     v, H, R = ddres(nav, nav.x, y, e, sats, els, nav.dt, obsr)
-
-    # reset outage counters for good sats
-    #nav.outc[np.where(nav.vsat > 0)] = 0
     
     if len(v) < 4:
         trace(3, 'not enough double-differenced residual\n')
-        return
+        stat = gn.SOLQ_NONE
+    else:
+        stat = gn.SOLQ_FLOAT
     
-    # kalman filter measurement update, 
-    tracemat(3, 'before filter x=', nav.x[0:9])
-    #tracemat(3, 'before filter v=', v)
-    xp, Pp = gn.filter(nav.x, nav.P, H, v, R)
-    tracemat(3, 'after filter x=', xp[0:9])
-    posvar = np.sum(np.diag(Pp[0:3])) / 3
-    trace(3,"posvar=%.6f \n" % posvar);
+    if stat != gn.SOLQ_NONE:
+        # kalman filter measurement update
+        tracemat(3, 'before filter x=', nav.x[0:9])
+        #tracemat(3, 'before filter v=', v)
+        xp, Pp = gn.filter(nav.x, nav.P, H, v, R)
+        tracemat(3, 'after filter x=', xp[0:9])
+        posvar = np.sum(np.diag(Pp[0:3])) / 3
+        trace(3,"posvar=%.6f \n" % posvar)
 
-    # check validity of solution (optional, doesn't affect result)
-    # non-differencial residual for rover after measurement update
-    # yu, eu, _ = zdres(nav, obsr, rs, dts, svh, xp[0:3], 1)
-    # y[:ns,:], e[:ns,:] = yu[iu,:], eu[iu,:]
-    # # residual for float solution
-    # v, H, R = ddres(nav, xp, y, e, sat, el, dt, obsr)
-    #valpos(nav, v, R):
+        # check validity of solution (optional, doesn't affect result)
+        # non-differencial residual for rover after measurement update
+        # yu, eu, _ = zdres(nav, obsr, rs, dts, svh, xp[0:3], 1)
+        # y[:ns,:], e[:ns,:] = yu[iu,:], eu[iu,:]
+        # # residual for float solution
+        # v, H, R = ddres(nav, xp, y, e, sat, el, dt, obsr)
+        #valpos(nav, v, R):
         
-    # save results and update sat status
-    nav.x = xp
-    nav.P = Pp
+        # save results of kalman filter update
+        nav.x = xp
+        nav.P = Pp
+        
+    # update sat status
     for f in range(nav.nf):
         ix = np.where(nav.vsat[:,f] > 0)[0]
         nav.outc[ix,f] = 0
         if f == 0:
             nav.ns = len(ix)
-    
-        
+
     # ambiguity resolution
-    nav.smode = FLOAT_MODE
-    if nav.armode > 0 and posvar < nav.thresar1:
+    if stat == gn.SOLQ_FLOAT and nav.armode > 0 and posvar < nav.thresar1:
         nb, xa = resamb_lambda(nav, sats)
         if nb > 0:
             yu, eu, _ = zdres(nav, obsr, rs, dts, var, svh, xa[0:3], 1)
@@ -828,7 +809,23 @@ def relpos(nav, obsr, obsb):
             if valpos(nav, v, R):
                 if nav.armode == 3:
                     holdamb(nav, xa)
-                nav.smode = FIX_MODE
+                stat = gn.SOLQ_FIX
+    
+    # save solution unless none
+    if stat != gn.SOLQ_NONE:
+        if stat == gn.SOLQ_FIX: 
+            sol.rr = nav.xa[0:6]
+            sol.qr = nav.Pa[0:3,0:3]
+            sol.qv = nav.Pa[3:6,3:6]
+        else: # SOLQ_FLOAT
+            sol.rr = nav.x[0:6]
+            sol.qr = nav.P[0:3,0:3]
+            sol.qv = nav.P[3:6,3:6]
+        sol.stat = stat
+        sol.ratio = nav.ratio
+        sol.age = nav.dt
+        nav.sol.append(sol)
+        nav.rr = sol.rr[0:3]
                 
     # save phases and times for cycle slip detection
     for i, sat in enumerate(sats):
@@ -858,7 +855,8 @@ def rtkpos(nav, rov, base, dir):
                     nav.x[0:6] = cfg.rr_b
         else:
             # get next rover obs and next base obs if required
-            t = nav.sol[-1].t # previous epoch
+            if len(nav.sol) > 0:
+                t = nav.sol[-1].t # previous epoch
             obsr, obsb = rn.next_obs(nav, rov, base, dir)
         if obsr == []:
             break
@@ -871,15 +869,7 @@ def rtkpos(nav, rov, base, dir):
             sol.t = obsr.t
         nav.tt = gn.timediff(sol.t, t)
         # relative solution
-        relpos(nav, obsr, obsb)
-        sol.rr = nav.xa[0:6] if nav.smode == 1 else nav.x[0:6]
-        sol.qr = nav.Pa[0:3,0:3] if nav.smode == 1 else nav.P[0:3,0:3]
-        sol.qv = nav.Pa[3:6,3:6] if nav.smode == 1 else nav.P[3:6,3:6]
-        sol.smode = nav.smode
-        sol.ns = nav.ns
-        sol.ratio = nav.ratio
-        sol.age = nav.dt
-        nav.sol.append(sol)
+        relpos(nav, obsr, obsb, sol)
         n += 1
         if nav.maxepoch != None and n > nav.maxepoch:
             break
