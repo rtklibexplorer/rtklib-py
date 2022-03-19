@@ -689,12 +689,13 @@ def trace(level, msg):
 def tracemat(level, msg, mat, fmt='.6f'):
     if level > trace_level:
         return
-    trace(level, msg)
     fmt = '{:' + fmt + '}'
     if len(mat.shape) == 1 or mat.shape[1] == 1:
+        trace(level, msg)
         sys.stderr.write(' '.join(map(fmt.format, mat)))
         sys.stderr.write('\n')
     else:
+        trace(level, msg + '\n')
         for row in mat:
             sys.stderr.write(' '.join(map(fmt.format, row)))
             sys.stderr.write('\n')

@@ -80,12 +80,13 @@ def eph2pos(t, eph):
         omge = rCST.OMGE
 
     M = eph.M0 + (np.sqrt(mu / eph.A**3) + eph.deln) * tk
-    E = M
+    E, Ek = M, 0
     for _ in range(MAX_ITER_KEPLER):
-        Ek = E
-        E -= (E - eph.e * np.sin(E) - M) / (1 - eph.e * np.cos(E))
         if abs(E - Ek) < RTOL_KEPLER:
             break
+        Ek = E
+        E -= (E - eph.e * np.sin(E) - M) / (1.0 - eph.e * np.cos(E))
+
     sinE = np.sin(E); cosE = np.cos(E)
     nus = np.sqrt(1.0 - eph.e**2) * sinE
     nuc = cosE - eph.e
@@ -130,8 +131,9 @@ def eph2clk(time, eph):
     """ calculate clock offset based on ephemeris """
     t = ts = timediff(time, eph.toc)
     for _ in range(2):
-        t = ts - eph.af0 + eph.af1 * t + eph.af2 * t**2
+        t = ts - (eph.af0 + eph.af1 * t + eph.af2 * t**2)
     dts = eph.af0 + eph.af1*t + eph.af2 * t**2
+    trace(4, 'ephclk: t=%.9f ts=%.9f dts=%.9f f0=%.9f f1=%.9f f2=%.9f\n' % (t,ts,dts,eph.af0,eph.af1,eph.af2))
     return dts
 
 def ephclk(time, eph):
@@ -163,7 +165,6 @@ def satposs(obs, nav):
     dts = np.zeros(n)
     var = np.zeros(n)
     svh = np.zeros(n, dtype=int)
-    sec = np.zeros(n)
     
     ep = time2epoch(obs.t)
     trace(3,"satposs  : teph= %04d/%02d/%02d %02d:%02d:%06.3f n=%d ephopt=%d\n" %           
@@ -171,7 +172,6 @@ def satposs(obs, nav):
     
     for i in np.argsort(obs.sat):
         sat = obs.sat[i]
-        sys = nav.sysprn[sat][0]
         # search any pseudorange
         pr = obs.P[i,0] if obs.P[i,0] != 0 else obs.P[i,1]
         # transmission time by satellite clock
@@ -186,7 +186,7 @@ def satposs(obs, nav):
         # satellite clock bias by broadcast ephemeris
         dt = ephclk(t, eph)
         t = timeadd(t, -dt)
-        sec[i] = t.sec
+        trace(3,'satposs: %d,time=%.9f dt=%.9f, pr=%.3f\n' % (obs.sat[i],t.sec,dt,pr))
         # satellite position and clock at transmission time 
         rs[i], var[i], dts[i] = satpos(t, eph)
 
