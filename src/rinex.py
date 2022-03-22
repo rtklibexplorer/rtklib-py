@@ -132,6 +132,7 @@ class rnx_decode:
                 eph.toe = gpst2time(eph.week, eph.toes)
                 eph.tot = gpst2time(eph.week, tot)
                 nav.eph.append(eph)
+        #nav.eph.sort(key=lambda x: (x.sat, x.toe.time))
         nav.eph.sort(key=lambda x: x.toe.time)
         return nav
 

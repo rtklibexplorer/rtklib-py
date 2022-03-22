@@ -46,7 +46,7 @@ def prange(nav, obs, i):
 def rescode(iter, obs, nav, rs, dts, svh, x):
     """ calculate code residuals """
     ns = len(obs.sat)  # measurements
-    trace(3, 'rescode : n=%d\n' % ns)
+    trace(4, 'rescode : n=%d\n' % ns)
     v = np.zeros(ns + NX - 3)
     H = np.zeros((ns + NX - 3, NX))
     mask = np.zeros(NX - 3) # clk states 

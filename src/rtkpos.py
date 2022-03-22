@@ -213,7 +213,8 @@ def varerr(nav, el, f, dt, rcvstd):
     code = 1 * (f >= nav.nf) # 0 = phase, 1 = code
     freq = f % nav.nf
     s_el = np.sin(el)
-    #if s_el <= 0.0: return 0.0
+    if s_el <= 0.0: 
+        return 0.0
     fact = nav.eratio[freq] if code else 1
     a, b = fact * nav.err[1:3]
     c = fact * 0  # nav.err[4]*bl/1E4  # TODO: add baseline term
@@ -430,7 +431,7 @@ def resamb_lambda(nav, sats):
     tracemat(3,'N(2)=      ', b[:,1], '7.3f')
     ratio = s[1] / s[0]
     if s[0] <= 0.0 or ratio >= nav.thresar[0]:
-        trace(3,'resamb : validation OK (nb=%d ratio=%.2f\n s=%.2f/%.2f' 
+        trace(3,'resamb : validation OK (nb=%d ratio=%.2f\n s=%.2f/%.2f\n' 
               % (nb, ratio, s[1], s[0]))
         nav.xa = nav.x[0:na].copy()
         nav.Pa = nav.P[0:na, 0:na].copy()
@@ -565,7 +566,7 @@ def udpos(nav):
     if posvar < nav.thresar1:
         F[3:6, 6:9] += np.eye(3) * tt**2 / 2
     else:
-        trace(3, 'ignore high accel: %.4f\n' % posvar)
+        trace(3, 'pos var too high for accel term: %.4f\n' % posvar)
     # x=F*x, P=F*P*F
     nav.x = F @ nav.x
     nav.P = F @ nav.P @ F.T
@@ -609,7 +610,7 @@ def udbias(nav, obsb, obsr, iu, ir):
         for i in range(ns):
             j = IB(sat[i], f, nav.na)
             nav.P[j,j] += nav.prnbias**2 * abs(nav.tt)
-            if (nav.slip[sat[i]-1,f] & 1) or nav.rejc[sat[i]-1,f] > 1:
+            if (nav.slip[sat[i]-1,f] & 1) or nav.rejc[sat[i]-1,f] >= 1:
                 initx(nav, 0, 0, j)
                 nav.rejc[sat[i]-1,f] = 0
                 nav.slip[sat[i]-1,f] = 0
@@ -805,8 +806,8 @@ def relpos(nav, obsr, obsb, sol):
     if stat == gn.SOLQ_FLOAT and nav.armode > 0 and posvar < nav.thresar1:
         nb, xa = resamb_lambda(nav, sats)
         if nb > 0:
-            yu, eu, _ = zdres(nav, obsr, rs, dts, var, svh, xa[0:3], 1)
-            yu, eu = yu[iu, :], eu[iu, :]
+            yu, eu, el = zdres(nav, obsr, rs, dts, svh, var, xa[0:3], 1)
+            yu, eu, el = yu[iu, :], eu[iu, :], el[iu]
             v, H, R = ddres(nav, xa, yr, er, yu, eu, sats, el, nav.dt, obsr)
             if valpos(nav, v, R):
                 if nav.armode == 3:
@@ -844,7 +845,6 @@ def rtkpos(nav, rov, base, dir):
 
     n = 0
     while True:
-        print(n)
         if n== 0:
             obsr, obsb = rn.first_obs(nav, rov, base, dir)
             t = obsr.t
@@ -872,6 +872,7 @@ def rtkpos(nav, rov, base, dir):
         nav.tt = gn.timediff(sol.t, t)
         # relative solution
         relpos(nav, obsr, obsb, sol)
+        print('%.2f: %d' % (sol.t.time % (24 * 3600) + sol.t.sec, sol.stat))
         n += 1
         if nav.maxepoch != None and n > nav.maxepoch:
             break

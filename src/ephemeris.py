@@ -14,7 +14,7 @@ RTOL_KEPLER = 1e-13
 
 
 def seleph(nav, t, sat):
-    """ select ephemeric for sat, assumes ephemeris is sorted by time """
+    """ select ephemeric for sat, assumes ephemeris is sorted by sat, then time """
     dt_p = 1e10 # timediff(t, nav.eph[nav.eph_index[sat]].toe)
     eph = None
     sys = sat2prn(sat)[0]
@@ -32,7 +32,7 @@ def seleph(nav, t, sat):
             eph = eph_
         else:
             break
-    #trace(3, 'seleph: sat=%d dt=%.0f\n' % (sat,dt_p))
+    trace(4, 'seleph: sat=%d dt=%.0f\n' % (sat,dt_p))
     nav.eph_index[sat] = max(nav.eph_index[sat] + i_p - 1, 0) # save index for next time
     return eph
 
@@ -167,7 +167,7 @@ def satposs(obs, nav):
     svh = np.zeros(n, dtype=int)
     
     ep = time2epoch(obs.t)
-    trace(3,"satposs  : teph= %04d/%02d/%02d %02d:%02d:%06.3f n=%d ephopt=%d\n" %           
+    trace(3, 'satposs  : teph= %04d/%02d/%02d %02d:%02d:%06.3f n=%d ephopt=%d\n' %           
           (ep[0], ep[1], ep[2], ep[3], ep[4], ep[5], n, 0)); 
     
     for i in np.argsort(obs.sat):
@@ -180,14 +180,16 @@ def satposs(obs, nav):
         eph = seleph(nav, t, sat)
         if eph is None:
             svh[i] = 1
-            trace(3, 'No ephemeris found')
+            trace(3, 'No ephemeris found\n')
             continue
         svh[i] = eph.svh
         # satellite clock bias by broadcast ephemeris
         dt = ephclk(t, eph)
         t = timeadd(t, -dt)
-        trace(3,'satposs: %d,time=%.9f dt=%.9f, pr=%.3f\n' % (obs.sat[i],t.sec,dt,pr))
         # satellite position and clock at transmission time 
         rs[i], var[i], dts[i] = satpos(t, eph)
+        trace(3,'satposs: %d,time=%.9f dt=%.9f pr=%.3f rs=%13.3f %13.3f %13.3f dts=%12.3f var=%7.3f\n' 
+              % (obs.sat[i],t.sec,dt,pr,*rs[i,0:3],dts[i]*1e9,var[i]))
+
 
     return rs, var, dts, svh
