@@ -22,26 +22,40 @@ ERR_CBIAS = 0.3         #  code bias error Std (m)
 REL_HUMI =  0.7         #  relative humidity for Saastamoinen model
 MIN_EL = np.deg2rad(5)  #  min elevation for measurement
 
-def varerr(nav, el, rcvstd):
+def varerr(nav, sys, el, rcvstd):
     """ variation of measurement """
     s_el = np.sin(el)
     if s_el <= 0.0:
         return 0.0
-    a = 0.003 #nav.err[1]
-    b = 0.003 #nav.err[2]
-    var = a**2+(b/s_el)**2
-    # TODO: add adjustment for constellation, not needed for GPS+GAL only
-    # add scaled stdevs from receiver
-    #if nav.err[3] > 0:
-    #    var += (nav.err[3] * rcvstd)**2
+    a = 0.003 # use simple weighting, since only used for approx location
+    b = 0.003 
+    var = a**2 + (b / s_el)**2
+    var *= nav.efact[sys]
     return var
+
+def gettgd(sat, eph, type=0):
+    """ get tgd: 0=E5a, 1=E5b  """
+    sys = gn.sat2prn(sat)[0]
+    if sys == uGNSS.GLO:
+        return eph.dtaun * rCST.CLIGHT
+    else:
+        return eph.tgd[type] * rCST.CLIGHT
+    
 
 def prange(nav, obs, i):
     eph = seleph(nav, obs.t, obs.sat[i])
-    if obs.P[i, 0] == 0:
+    P1 = obs.P[i,0]
+    if P1 == 0:
         return 0
-    P = obs.P[i, 0] - eph.tgd * rCST.CLIGHT
-    return P
+    sys = gn.sat2prn(obs.sat[i])[0]
+    if sys != uGNSS.GLO:
+        b1 = gettgd(obs.sat[i], eph, 0)
+        return P1 - b1
+    else:  # GLONASS
+        # TODO:  abstract hard coded freqs
+        gamma = nav.freq[4] / nav.freq[5]  # G1/G2
+        b1 = gettgd(obs.sat[i], eph, 0)
+        return P1 - b1 / (gamma - 1)
 
 def rescode(iter, obs, nav, rs, dts, svh, x):
     """ calculate code residuals """
@@ -57,16 +71,16 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
     rr = x[0:3].copy()
     dtr = x[3]
     pos = ecef2pos(rr)
+    trace(3, 'rescode: rr=%.3f %.3f %.3f\n' % (rr[0], rr[1], rr[2]))
     rcvstds(nav, obs) # decode stdevs from receiver
     
     nv = 0
     for i in range(ns):
         sys = nav.sysprn[obs.sat[i]][0]
-        if norm(rs[i,:]) < rCST.RE_WGS84 or svh[i] > 0:
+        if norm(rs[i,:]) < rCST.RE_WGS84:
             continue
-        # TODO: excluded satellites
-        #if satexclude(obs.sat[i], var):
-        #    continue
+        if gn.satexclude(obs.sat[i], var[i], svh[i], nav):
+            continue
         # geometric distance and elevation mask
         r, e = geodist(rs[i], rr)
         if r < 0:
@@ -75,7 +89,9 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
         if el < nav.elmin:
             continue
         if iter > 0:
-            # TODO: test SNR mask
+            # test CNR
+            if obs.S[i,[0]] < nav.cnr_min:
+                continue
             # ionospheric correction
             dion = ionmodel(obs.t, pos, az, el, nav.ion)
             # tropospheric correction
@@ -103,7 +119,7 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
             
         azv[nv] = az
         elv[nv] = el
-        var[nv] = varerr(nav, el, nav.rcvstd[obs.sat[i]-1,0])
+        var[nv] = varerr(nav, sys, el, nav.rcvstd[obs.sat[i]-1,0])
         nv += 1
 
     # constraint to avoid rank-deficient
@@ -126,9 +142,10 @@ def estpos(obs, nav, rs, dts, svh):
     x = np.zeros(NX)
     x[0:3] = nav.x[0:3]
     sol = Sol()
+    trace(3, 'estpos  : n=%d\n' % len(rs))
     for iter in range(MAXITR):
         v, H, az, el, var = rescode(iter, obs, nav, rs[:,0:3], dts, svh, x)
-        nv = len(v)
+        nv = len(v)    
         if nv < NX:
             trace(3, 'estpos: lack of valid sats nsat=%d nv=%d\n' % 
                   (len(obs.sat), nv))

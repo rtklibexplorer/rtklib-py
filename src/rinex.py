@@ -6,8 +6,8 @@ Copyright (c) 2022 Tim Everett
 """
 
 import numpy as np
-from rtkcmn import uGNSS, rSIG, Eph, prn2sat, gpst2time, Obs, epoch2time, timediff
-import time
+from rtkcmn import uGNSS, rSIG, Eph, Geph, prn2sat, gpst2time, time2gpst, Obs, \
+                    epoch2time, timediff, timeadd, utc2gpst
 
 class rnx_decode:
     """ class for RINEX decoder """
@@ -20,9 +20,10 @@ class rnx_decode:
                                      rSIG.L2X: 1, rSIG.L5Q: 2, rSIG.L5X: 2},
                          uGNSS.GAL: {rSIG.L1C: 0, rSIG.L1X: 0, rSIG.L5Q: 2, rSIG.L5X: 2, 
                                      rSIG.L7Q: 3, rSIG.L7X: 3},
+                         uGNSS.GLO: {rSIG.L1C: 0, rSIG.L2C: 1}, 
                          uGNSS.QZS: {rSIG.L1C: 0, rSIG.L1X: 0, rSIG.L2W: 1, rSIG.L2L: 1,  
                                      rSIG.L2X: 1, rSIG.L5Q: 2, rSIG.L5X: 2}}
-        self.gnss_tbl = {'G': uGNSS.GPS, 'E': uGNSS.GAL, 'J': uGNSS.QZS}
+        self.gnss_tbl = {'G': uGNSS.GPS, 'E': uGNSS.GAL, 'R': uGNSS.GLO, 'J': uGNSS.QZS}
         self.sig_tbl = {'1C': rSIG.L1C, '1X': rSIG.L1X, '1W': rSIG.L1W,
                         '2W': rSIG.L2W, '2L': rSIG.L2L, '2X': rSIG.L2X,
                         '5Q': rSIG.L5Q, '5X': rSIG.L5X, '7Q': rSIG.L7Q,
@@ -42,10 +43,21 @@ class rnx_decode:
             return float(u.replace("D", "E"))
         except:
             return 0
+        
+    
+    def adjday(self, t, t0):
+        """" adjust time considering week handover  """
+        tt = timediff(t, t0)
+        if tt < -43200.0:
+            return timeadd(t, 86400.0)
+        if tt > 43200.0:
+            return timeadd(t,-86400.0)
+        return t;
 
     def decode_nav(self, navfile, nav):
         """decode RINEX Navigation message from file """
         nav.eph = []
+        nav.geph = []
         with open(navfile, 'rt') as fnav:
             for line in fnav:
                 if line[60:73] == 'END OF HEADER':
@@ -70,70 +82,117 @@ class rnx_decode:
                 if sys == uGNSS.QZS:
                     prn += 192
                 sat = prn2sat(sys, prn)
-                eph = Eph(sat)
-
                 year = int(line[4:8])
                 month = int(line[9:11])
                 day = int(line[12:14])
                 hour = int(line[15:17])
                 minute = int(line[18:20])
                 sec = int(line[21:23])
-                eph.toc = epoch2time([year, month, day, hour, minute, sec])
-                eph.af0 = self.flt(line, 1)
-                eph.af1 = self.flt(line, 2)
-                eph.af2 = self.flt(line, 3)
+                toc = epoch2time([year, month, day, hour, minute, sec])
+                if sys != uGNSS.GLO:
+                    eph = Eph(sat)
+                    eph.toc = toc
+                    eph.f0 = self.flt(line, 1)
+                    eph.f1 = self.flt(line, 2)
+                    eph.f2 = self.flt(line, 3)
+    
+                    line = fnav.readline() #3:6
+                    eph.iode = int(self.flt(line, 0)) 
+                    eph.crs = self.flt(line, 1)
+                    eph.deln = self.flt(line, 2)
+                    eph.M0 = self.flt(line, 3)
+    
+                    line = fnav.readline() #7:10
+                    eph.cuc = self.flt(line, 0)
+                    eph.e = self.flt(line, 1)
+                    eph.cus = self.flt(line, 2)
+                    sqrtA = self.flt(line, 3)
+                    eph.A = sqrtA**2
+    
+                    line = fnav.readline() #11:14
+                    eph.toes = int(self.flt(line, 0))
+                    eph.cic = self.flt(line, 1)
+                    eph.OMG0 = self.flt(line, 2)
+                    eph.cis = self.flt(line, 3)
+    
+                    line = fnav.readline() #15:18
+                    eph.i0 = self.flt(line, 0)
+                    eph.crc = self.flt(line, 1)
+                    eph.omg = self.flt(line, 2)
+                    eph.OMGd = self.flt(line, 3)
+    
+                    line = fnav.readline() #19:22
+                    eph.idot = self.flt(line, 0)
+                    eph.code = int(self.flt(line, 1))  # source for GAL NAV type
+                    eph.week = int(self.flt(line, 2))
+    
+                    line = fnav.readline() #23:26
+                    eph.sva = self.flt(line, 0)
+                    eph.svh = int(self.flt(line, 1))
+                    tgd = np.zeros(2)
+                    tgd[0] = float(self.flt(line, 2))
+                    if sys == uGNSS.GAL:
+                        tgd[1] = float(self.flt(line, 3))
+                    else:
+                        eph.iodc = int(self.flt(line, 3))
+                    eph.tgd = tgd
+    
+                    line = fnav.readline() #27:30
+                    tot = int(self.flt(line, 0))
+                    if len(line) >= 42:
+                        eph.fit = int(self.flt(line, 1))
+    
+                    eph.toe = gpst2time(eph.week, eph.toes)
+                    eph.tot = gpst2time(eph.week, tot)
+                    nav.eph.append(eph)
+                else:  # GLONASS
+                    geph = Geph(sat)
+                    # Toc rounded by 15 min in utc 
+                    week, tow = time2gpst(toc)
+                    toc = gpst2time(week,np.floor((tow + 450.0) / 900.0) * 900)
+                    dow = int(np.floor(tow  / 86400.0))
+                    # time of frame in UTC 
+                    tod = self.flt(line, 2) % 86400
+                    tof = gpst2time(week ,tod + dow * 86400.0)
+                    tof = self.adjday(tof, toc)
+                    geph.toe = utc2gpst(toc)
+                    geph.tof = utc2gpst(tof)
+                    # IODE = Tb (7bit), Tb =index of UTC+3H within current day
+                    geph.iode = int(((tow + 10800.0) % 86400) / 900.0 + 0.5)
+                    geph.taun = -self.flt(line, 1)
+                    geph.gamn = self.flt(line, 2)
+                    
+                    line = fnav.readline() #3:6
+                    pos =np.zeros(3)
+                    vel = np.zeros(3)
+                    acc = np.zeros(3)
+                    pos[0] = self.flt(line, 0)
+                    vel[0] = self.flt(line, 1)
+                    acc[0] = self.flt(line, 2)
+                    geph.svh = self.flt(line, 3)
+                    
+                    line = fnav.readline() #7:10
+                    pos[1] = self.flt(line, 0)
+                    vel[1] = self.flt(line, 1)
+                    acc[1] = self.flt(line, 2)
+                    geph.frq = self.flt(line, 3)
+                    nav.glofrq[sat - uGNSS.GPSMAX - 1] = int(geph.frq)
 
-                line = fnav.readline() #3:6
-                eph.iode = int(self.flt(line, 0)) 
-                eph.crs = self.flt(line, 1)
-                eph.deln = self.flt(line, 2)
-                eph.M0 = self.flt(line, 3)
-
-                line = fnav.readline() #7:10
-                eph.cuc = self.flt(line, 0)
-                eph.e = self.flt(line, 1)
-                eph.cus = self.flt(line, 2)
-                sqrtA = self.flt(line, 3)
-                eph.A = sqrtA**2
-
-                line = fnav.readline() #11:14
-                eph.toes = int(self.flt(line, 0))
-                eph.cic = self.flt(line, 1)
-                eph.OMG0 = self.flt(line, 2)
-                eph.cis = self.flt(line, 3)
-
-                line = fnav.readline() #15:18
-                eph.i0 = self.flt(line, 0)
-                eph.crc = self.flt(line, 1)
-                eph.omg = self.flt(line, 2)
-                eph.OMGd = self.flt(line, 3)
-
-                line = fnav.readline() #19:22
-                eph.idot = self.flt(line, 0)
-                eph.code = int(self.flt(line, 1))  # source for GAL
-                eph.week = int(self.flt(line, 2))
-
-                line = fnav.readline() #23:26
-                eph.sva = self.flt(line, 0)
-                eph.svh = int(self.flt(line, 1))
-                eph.tgd = float(self.flt(line, 2))
-                if sys == uGNSS.GAL:
-                    tgd_b = float(self.flt(line, 3))
-                    if (eph.code >> 9) & 1:
-                        eph.tgd = tgd_b
-                else:
-                    eph.iodc = int(self.flt(line, 3))
-
-                line = fnav.readline() #27:30
-                tot = int(self.flt(line, 0))
-                if len(line) >= 42:
-                    eph.fit = int(self.flt(line, 1))
-
-                eph.toe = gpst2time(eph.week, eph.toes)
-                eph.tot = gpst2time(eph.week, tot)
-                nav.eph.append(eph)
+                    line = fnav.readline() #11:14
+                    pos[2] = self.flt(line, 0)
+                    vel[2] = self.flt(line, 1)
+                    acc[2] = self.flt(line, 2)                                      
+                    geph.age = self.flt(line, 2)
+                    
+                    geph.pos = pos * 1000
+                    geph.vel = vel * 1000
+                    geph.acc = acc * 1000
+                    
+                    nav.geph.append(geph)
+    
         #nav.eph.sort(key=lambda x: (x.sat, x.toe.time))
         nav.eph.sort(key=lambda x: x.toe.time)
+        nav.geph.sort(key=lambda x: x.toe.time)
         return nav
 
     def decode_obsh(self, obsfile):

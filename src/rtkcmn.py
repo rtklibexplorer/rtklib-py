@@ -36,18 +36,24 @@ SOLQ_FIX = 1
 SOLQ_FLOAT = 2
 SOLQ_SINGLE = 5
 
+MAX_VAR_EPH = 300**2 # max variance eph to reject satellite
+
 class rCST():
     """ class for constants """
     CLIGHT = 299792458.0
     MU_GPS = 3.9860050E14
     MU_GAL = 3.986004418E14
+    MU_GLO = 3.9860044E14
     GME = 3.986004415E+14
     GMS = 1.327124E+20
     GMM = 4.902801E+12
     OMGE = 7.2921151467E-5
     OMGE_GAL = 7.2921151467E-5
+    OMGE_GLO = 7.292115E-5
     RE_WGS84 = 6378137.0
+    RE_GLO = 6378136.0
     FE_WGS84 = (1.0/298.257223563)
+    J2_GLO = 1.0826257E-3  # 2nd zonal harmonic of geopot
     AU = 149597870691.0
     D2R = 0.017453292519943295
     AS2R = D2R/3600.0
@@ -68,12 +74,11 @@ class uGNSS(IntEnum):
     GPSMAX = 32
     GALMAX = 36
     QZSMAX = 10
+    GLOMAX = 27
 #    BDSMAX = 63
-#    GLOMAX = 24
 #    SBSMAX = 24
 #    IRNMAX = 10
     BDSMAX = 0
-    GLOMAX = 0
     SBSMAX = 0
     IRNMAX = 0
     NONE = -1
@@ -91,6 +96,8 @@ class uSIG(IntEnum):
     GAL_E1B = 1
     GAL_E5BI = 5
     GAL_E5BQ = 6
+    GLO_L1C = 0
+    GLO_L2C = 1
     BDS_B1ID1 = 0
     BDS_B1ID2 = 1
     BDS_B2ID1 = 2
@@ -111,13 +118,14 @@ class rSIG(IntEnum):
     L1C = 1
     L1X = 2
     L1W = 3
-    L2L = 4
-    L2X = 5
-    L2W = 6
-    L5Q = 7
-    L5X = 8
-    L7Q = 9
-    L7X = 10
+    L2C = 4
+    L2L = 5
+    L2X = 6
+    L2W = 7
+    L5Q = 8
+    L5X = 9
+    L7Q = 10
+    L7X = 11
     SIGMAX = 16
 
 
@@ -145,13 +153,13 @@ class Obs():
 
 
 class Eph():
-    """ class to define ephemeris """
+    """ class to define GPS/GAL/QZS/CMP ephemeris """
     sat = 0
     iode = 0
     iodc = 0
-    af0 = 0.0
-    af1 = 0.0
-    af2 = 0.0
+    f0 = 0.0
+    f1 = 0.0
+    f2 = 0.0
     toc = 0
     toe = 0
     tot = 0
@@ -171,8 +179,7 @@ class Eph():
     OMGd = 0.0
     omg = 0.0
     idot = 0.0
-    tgd = 0.0
-    tgd_b = 0.0
+    tgd = [0.0, 0.0]
     sva = 0
     health = 0
     fit = 0
@@ -181,24 +188,36 @@ class Eph():
     def __init__(self, sat=0):
         self.sat = sat
 
+class Geph():
+    """ class to define GLO ephemeris """
+    sat = 0
+    iode = 0
+    frq = 0
+    svh = 0
+    sva = 0
+    age = 0
+    toe = 0
+    tof = 0
+    pos = np.zeros(3)
+    vel = np.zeros(3)
+    acc = np.zeros(3)
+    taun = 0.0
+    gamn = 0.0
+    dtaun = 0.0
+
+    def __init__(self, sat=0):
+        self.sat = sat
 
 class Nav():
     """ class to define the navigation message """
 
     def __init__(self, cfg):
         self.eph = []
+        self.geph = []
         self.ion = ion_default
-        self.elmin = np.deg2rad(cfg.elmin)
-        #self.tidecorr = cfg.tidecorr
-        self.nf = cfg.nf
-        self.excl_sat = cfg.excl_sat
-        self.freq = cfg.freq 
         self.rb = [0, 0, 0]  # base station position in ECEF [m]
         self.rr = [0, 0, 0]
         self.stat = SOLQ_NONE   
-        self.gnss_t = cfg.gnss_t
-        self.cnr_min = cfg.cnr_min
-        self.maxout = cfg.maxout  # maximum outage [epoch]
 
         # no ant pcv for now
         self.ant_pcv = 3*[19*[0]]
@@ -207,6 +226,7 @@ class Nav():
         self.ant_pco_b = 3 * [0]
 
         # satellite observation status
+        self.nf = cfg.nf
         self.fix = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.outc = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.vsat = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
@@ -214,6 +234,7 @@ class Nav():
         self.lock = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.slip = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.rcvstd = np.zeros((uGNSS.MAXSAT, self.nf*2))
+        self.glofrq = np.zeros(uGNSS.GLOMAX, dtype=int)
         self.sliplist = []
     
         self.eph_index  = np.zeros(uGNSS.MAXSAT, dtype=int)
@@ -303,6 +324,11 @@ def gpst2utc(tgps, leaps_=-18):
     """ calculate UTC-time from gps-time """
     tutc = timeadd(tgps, leaps_)
     return tutc
+
+def utc2gpst(tutc, leaps_=-18):
+    """ calculate UTC-time from gps-time """
+    tgps = timeadd(tutc, -leaps_)
+    return tgps
 
 
 def timeadd(t: gtime_t, sec: float):
@@ -439,10 +465,35 @@ def id2sat(id_):
     sat = prn2sat(sys, prn)
     return sat
 
+def sat2freq(sat, frq, nav):
+    sys = nav.sysprn[sat][0]
+    j = nav.obs_idx[frq][sys]
+    freq = nav.freq[j]
+    if sys == uGNSS.GLO:
+        # adjust freq for individual satellite
+        freq += nav.glofrq[sat - uGNSS.GPSMAX - 1] * nav.dfreq_glo[frq]
+    return freq
+
 def vnorm(r):
     """ calculate norm of a vector """
     return r / norm(r)
 
+def satexclude(sat, var, svh, nav):
+    """ test excluded satellite
+    * test excluded satellite
+    * args   : int    sat       I   satellite number
+    *          double var       I   variance of ephemeris (m^2)
+    * return : status (1:excluded,0:not excluded)
+    *-----------------------------------------------------------------"""
+    
+    if sat in nav.excsats:
+        return 1
+    if svh:
+       trace(3, 'unhealthy satellite: sat=%d svh=%d\n' % (sat, svh)) 
+    if var > MAX_VAR_EPH:
+        trace(3, 'invalid ura satellite: sat=%3d ura=%.2f\n' % (sat, np.sqrt(var)))
+        return 1
+    return 0
 
 def geodist(rs, rr):
     """ geometric distance ----------------------------------------------------------
@@ -684,7 +735,7 @@ def tropmodel(t, pos, el, humi):
 
 def trace(level, msg):
     if level <= trace_level:
-        sys.stderr.write('%d %s' % (trace_level, msg))
+        sys.stderr.write('%d %s' % (level, msg))
         
 def tracemat(level, msg, mat, fmt='.6f'):
     if level > trace_level:
