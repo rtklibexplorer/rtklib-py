@@ -1,8 +1,8 @@
 """
  post-processing solution from rinex data
 """
+import numpy as np
 from copy import copy, deepcopy
-
 from rtkpos import rtkpos, rtkinit
 import __ppk_config as cfg
 import rinex as rn
@@ -45,7 +45,10 @@ def firstpos(nav, rov, base, dir):
         sol = pntpos(obsr, nav)
     nav.x[0:6] = copy(sol.rr[0:6])
     nav.rr[0:3] = copy(sol.rr[0:3])
-
+    
+def sqrtvar(cov):
+    " sqrt of covariance "
+    return np.sqrt(abs(cov)) * np.sign(cov)
     
 def savesol(sol, solfile):
     D2R = gn.rCST.D2R
@@ -56,11 +59,12 @@ def savesol(sol, solfile):
         for s in sol:
                 wk, sec = gn.time2gpst(s.t)
                 llh = gn.ecef2pos(s.rr[0:3])
+                std = sqrtvar(gn.covenu(llh, s.qr))
                 fmt = '%4d %10.3f %14.9f %14.9f %10.4f %3d %3d %8.4f' + \
                     '  %8.4f %8.4f %8.4f %8.4f %8.4f %6.2f %6.1f\n'
                 outfile.write(fmt % (wk, sec, llh[0]/D2R, llh[1]/D2R, llh[2], 
-                    s.stat, s.ns, s.qr[0,0], s.qr[1,1], s.qr[2,2], s.qr[0,1],
-                    s.qr[1,2], s.qr[2,0], s.age, s.ratio))
+                    s.stat, s.ns, std[1,1], std[0,0], std[2,2], std[0,1],
+                    std[2,0], std[1,2], s.age, s.ratio))
 
 def procpos(nav, rov, base):
  

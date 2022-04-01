@@ -588,20 +588,28 @@ def pos2ecef(pos, isdeg: bool = False):
     c_p = cos(pos[0])
     s_l = sin(pos[1])
     c_l = cos(pos[1])
-    e2 = rCST.FE_WGS84*(2.0-rCST.FE_WGS84)
-    v = rCST.RE_WGS84/sqrt(1.0-e2*s_p**2)
-    r = np.array([(v+pos[2])*c_p*c_l,
-                  (v+pos[2])*c_p*s_l,
-                  (v*(1.0-e2)+pos[2])*s_p])
+    e2 = rCST.FE_WGS84 * (2.0 - rCST.FE_WGS84)
+    v = rCST.RE_WGS84 / sqrt(1.0 - e2 * s_p**2)
+    r = np.array([(v + pos[2]) * c_p*c_l,
+                  (v + pos[2]) * c_p*s_l,
+                  (v * (1.0 - e2) + pos[2]) * s_p])
     return r
 
 
 def ecef2enu(pos, r):
     """ releative ECEF to ENU conversion """
     E = xyz2enu(pos)
-    e = E@r
+    e = E @ r
     return e
 
+def covenu(llh, P):
+    """transform covariance to local tangental coordinate --------------------------
+    * transform ecef covariance to local tangental coordinate
+    * args   : llh      I   geodetic position {lat,lon} (rad)
+    *          P        I   covariance in ecef coordinate
+    *          Q        O   covariance in local tangental coordinate """
+    E = xyz2enu(llh)
+    return E @ P @ E.T
 
 def deg2dms(deg):
     """ convert from deg to dms """
