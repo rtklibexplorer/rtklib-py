@@ -490,6 +490,7 @@ def satexclude(sat, var, svh, nav):
         return 1
     if svh:
        trace(3, 'unhealthy satellite: sat=%d svh=%d\n' % (sat, svh)) 
+       return 1
     if var > MAX_VAR_EPH:
         trace(3, 'invalid ura satellite: sat=%3d ura=%.2f\n' % (sat, np.sqrt(var)))
         return 1

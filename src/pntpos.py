@@ -12,7 +12,7 @@ import rtkcmn as gn
 from ephemeris import seleph, satposs
 from rinex import rcvstds
 
-NX =        5           # num of estimated parameters, pos + clock
+NX =        6           # num of estimated parameters, pos + clock
 MAXITR =    10          #  max number of iteration or point pos
 ERR_ION =   5.0         #  ionospheric delay Std (m)
 ERR_TROP =  3.0         #  tropspheric delay Std (m)
@@ -75,7 +75,7 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
     rcvstds(nav, obs) # decode stdevs from receiver
     
     nv = 0
-    for i in range(ns):
+    for i in np.argsort(obs.sat):
         sys = nav.sysprn[obs.sat[i]][0]
         if norm(rs[i,:]) < rCST.RE_WGS84:
             continue
@@ -94,6 +94,8 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
                 continue
             # ionospheric correction
             dion = ionmodel(obs.t, pos, az, el, nav.ion)
+            freq = gn.sat2freq(obs.sat[i], 0, nav)
+            dion *= (nav.freq[0] / freq)**2
             # tropospheric correction
             trop_hs, trop_wet, _ = tropmodel(obs.t, pos, el, REL_HUMI)
             mapfh, mapfw = tropmapf(obs.t, pos, el)
@@ -106,14 +108,20 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
             continue
         # pseudorange residual
         v[nv] = P - (r + dtr - rCST.CLIGHT * dts[i] + dion + dtrp)
+        trace(4, 'sat=%d: v=%.3f P=%.3f r=%.3f dtr=%.6f dts=%.6f dion=%.3f dtrp=%.3f\n' %
+              (obs.sat[i],v[nv],P,r,dtr,dts[i],dion,dtrp))
         # design matrix 
         H[nv, 0:3] = -e
         H[nv, 3] = 1
         # time system offset and receiver bias correction
-        if sys == uGNSS.GAL:
+        if sys == uGNSS.GLO:
             v[nv] -= x[4]
             H[nv, 4] = 1.0
             mask[1] = 1
+        elif sys == uGNSS.GAL:
+            v[nv] -= x[5]
+            H[nv, 5] = 1.0
+            mask[2] = 1
         else:
             mask[0] = 1
             
