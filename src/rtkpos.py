@@ -475,13 +475,13 @@ def detslp_dop(rcv, nav, obs, ix):
             if obs.L[ii,f] == 0.0 or obs.D[ii,f] == 0.0 or nav.ph[rcv,sat,f] == 0.0 \
                 or nav.pt[rcv,sat,f] == None:
                 continue
-            tt[i,f] = abs(gn.timediff(obs.t, nav.pt[rcv,sat,f]))
-            if tt[i,f] < gn.DTTOL:
+            tt[i,f] = gn.timediff(obs.t, nav.pt[rcv,sat,f])
+            if abs(tt[i,f]) < gn.DTTOL:
                 continue
             # calc phase difference and doppler x time (cycle)
-            dph = obs.L[ii,f] - nav.ph[rcv,sat,f]
-            dpt = -obs.D[ii,f] * tt[i,f]
-            dopdif[i,f] = (dph-dpt) / tt[i,f]
+            dph = (obs.L[ii,f] - nav.ph[rcv,sat,f]) / tt[i,f]
+            dpt = -obs.D[ii,f]
+            dopdif[i,f] = dph - dpt
 
             # if not outlier, use this to calculate mean
             if abs(dopdif[i,f]) < 3 * nav.thresdop:
