@@ -159,10 +159,9 @@ def estpos(obs, nav, rs, dts, svh):
                   (len(obs.sat), nv))
             return sol
         # weight by variance (lsq uses sqrt of weight 
-        sig = np.sqrt(var)
-        v /= sig
-        for j in range(nv):
-            H[j,:] /= sig[j]
+        std = np.sqrt(var)
+        v /= std
+        H /= std[:,None]
         # least square estimation
         dx = lstsq(H, v, rcond=None)[0]
         x += dx

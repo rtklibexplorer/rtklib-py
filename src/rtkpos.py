@@ -7,6 +7,7 @@ Copyright (c) 2022 Tim Everett
 
 import numpy as np
 from numpy.linalg import inv, norm
+from sys import stdout
 import rtkcmn as gn
 import rinex as rn
 from pntpos import pntpos
@@ -81,20 +82,14 @@ def rtkinit(cfg):
         dP[3:9] = nav.sig_v0**2
 
     # obs index
-    ix0 = cfg.freq_ix0
-    ix1 = cfg.freq_ix1
-    freq0 = {}; freq1 = {}
-    for k in ix0.keys():
-        freq0[k] = cfg.freq[ix0[k]]
-    for k in ix1.keys():
-        freq1[k] = cfg.freq[ix1[k]]
+    ix0, ix1 = cfg.freq_ix0, cfg.freq_ix1
+    freq0 = {k: cfg.freq[ix0[k]] for k in ix0.keys()}
+    freq1 = {k: cfg.freq[ix1[k]] for k in ix1.keys()}
     nav.obs_idx = [ix0, ix1]
     nav.obs_freq = [freq0, freq1]
 
     # sat index
-    nav.sysprn = {}
-    for i in range(uGNSS.MAXSAT):
-        nav.sysprn[i+1] = gn.sat2prn(i+1)
+    nav.sysprn = {i: gn.sat2prn(i) for i in range(1, uGNSS.MAXSAT+1)}
         
     return nav
 
@@ -184,11 +179,9 @@ def ddcov(nb, n, Ri, Rj, nv):
     R = np.zeros((nv, nv))
     k = 0
     for b in range(n):
-        for i in range(nb[b]):
-            for j in range(nb[b]):
-                R[k+i, k+j] = Ri[k+i]
-                if i == j:
-                    R[k+i, k+j] += Rj[k+i]
+        block = R[k:nb[b]+k, k:nb[b]+k] # define subarray
+        block += Ri[k:nb[b]+k]
+        block[range(nb[b]), range(nb[b])] += Rj[k:nb[b]+k]
         k += nb[b]
     return R
 
@@ -205,8 +198,7 @@ def sysidx(satlist, sys_ref):
 
 def IB(s, f, na=3):
     """ return index of phase ambguity """
-    idx = na + uGNSS.MAXSAT * f + s - 1
-    return idx
+    return na + uGNSS.MAXSAT * f + s - 1
 
 
 def varerr(nav, sys, el, f, dt, rcvstd):
@@ -250,7 +242,8 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
     Ri = np.zeros(ny)
     Rj = np.zeros(ny)
     H = np.zeros((nav.nx, ny))
-    trace(3,"ddres   : dt=%.1f ns=%d\n" % (dt, ns))
+    P_init = nav.sig_n0**2 # value used to initialize P states
+    trace(3,"ddres   : dt=%.4f ns=%d\n" % (dt, ns))
 
     nv = b = 0
     v = np.zeros(ny)
@@ -276,12 +269,9 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
             else:
                 i = i_el[0] # use highest sat if none without reset
             # calculate double differences of residuals (code/phase) for each sat
-            freqi = gn.sat2freq(sat[i], frq, nav)
-            lami = _c / freqi
+            lami = _c / gn.sat2freq(sat[i], frq, nav)
             for j in idx: # loop through sats
                 if i == j: continue  # skip ref sat
-                if yu[i,f] == 0 or yr[i,f] == 0 or yu[j,f] == 0 or yr[j,f] == 0:
-                    continue
                 #  double-differenced measurements from 2 receivers and 2 sats in meters 
                 v[nv] = (yu[i,f] - yr[i,f]) - (yu[j,f] - yr[j,f])
                 # partial derivatives by rover position, combine unit vectors from two sats
@@ -290,26 +280,24 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                 jj = IB(sat[j], frq, nav.na)
                 if not code:  # carrier phase
                     # adjust phase residual by double-differenced phase-bias term
-                    freqj = gn.sat2freq(sat[j], frq, nav)
-                    lamj = _c / freqj
+                    lamj = _c / gn.sat2freq(sat[j], frq, nav)
                     v[nv] -= lami * x[ii] - lamj * x[jj]
-                    H[ii, nv] = lami
-                    H[jj, nv] = -lamj
+                    H[ii, nv], H[jj, nv] = lami, -lamj
                 
                 # if residual too large, flag as outlier
                 thres = nav.maxinno
                 # use larger thresh for code or just initialized phase
-                if code or P[ii,ii] == nav.sig_n0**2 or \
-                        P[jj,jj] == nav.sig_n0**2:
+                if code or P[ii,ii] == P_init or P[jj,jj] == P_init:
                     thres *= nav.eratio[frq] 
                 if abs(v[nv]) > thres:
                     nav.vsat[sat[j]-1,frq] = 0
                     nav.rejc[sat[j]-1,frq] += 1
-                    trace(3,"outlier rejected: (sat=%3d-%3d %s%d v=%13.3f)\n" 
-                          % (sat[i], sat[j], 'LP'[code],frq+1, v[nv]))
+                    trace(3,"outlier rejected: (sat=%3d-%3d %s%d v=%13.3f x=%13.3f %13.3f P=%.6f %.6f)\n" 
+                          % (sat[i], sat[j], 'LP'[code],frq+1, v[nv], x[ii], x[jj], P[ii,ii],P[jj,jj]))
+                    H[ii, nv], H[jj, nv] = 0, 0
                     continue 
                 # single-differenced measurement error variances (m)
-                si = sat[i] - 1; sj = sat[j] - 1
+                si, sj = sat[i] - 1, sat[j] - 1
                 Ri[nv] = varerr(nav, sys, el[i], f, dt, nav.rcvstd[si,f])
                 Rj[nv] = varerr(nav, sys, el[j], f, dt, nav.rcvstd[sj,f])
                 if not code:
@@ -321,18 +309,20 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                 nv += 1
                 nb[b] += 1
             b += 1
-    R = ddcov(nb, b, Ri, Rj, nv)
+    R = ddcov(nb, b, Ri[:nv], Rj[:nv], nv)
 
     return v[:nv], H[:,:nv], R
 
 
 def valpos(nav, v, R, thres=4.0):
     """ post-file residual test """
+    trace(3, 'valpos  : nv=%d thres=%.1f\n' % (len(v), thres))
     nv = len(v)
     fact = thres**2
     for i in range(nv):
         if v[i]**2 > fact * R[i, i]:
-            trace(3, 'large residual (i=%d  v=%.3f)' % (i, v[i]))
+            trace(3, 'large residual (ix_sat=%d  v=%.3f sig=%.3f)\n' % 
+                  (i, v[i], np.sqrt(R[i, i])))
     return True
 
 
@@ -457,8 +447,10 @@ def resamb_lambda(nav, sats):
 def initx(nav, x0, v0, i):
     """ initialize x and P for index i """
     nav.x[i] = x0
-    for j in range(nav.nx):
-        nav.P[j, i] = nav.P[i, j] = v0 if i == j else 0
+    nav.P[i,:] = 0
+    nav.P[:,i] = 0
+    nav.P[i,i] = v0
+
 
 def detslp_dop(rcv, nav, obs, ix):
     """ detect cycle slip with doppler measurement """
@@ -491,7 +483,7 @@ def detslp_dop(rcv, nav, obs, ix):
     if ndop == 0:
         trace(4, 'detslp_dop rcv=%d: no valid doppler diffs\n' % (rcv+1))
         return # unable to calc mean doppler, usually very large clock err
-    mean_dop /= ndop;
+    mean_dop /= ndop
 
     # set slip if doppler difference with mean removed exceeds threshold
     for i, ii in enumerate(ix):
@@ -539,7 +531,13 @@ def detslp_ll(nav, obs, ix):
         for f in range(nav.nf):
             if obs.L[i,f] != 0:
                 nav.slip[sat,f] |= (obs.lli[i,f] & 1)
-            # TODO: add half-cycle ambiguity handling
+    # TODO: replace above code after test           
+    # sat = obs.sat[ix] - 1
+    # for f in range(nav.nf):
+    #     ix_slip = np.where(obs.L[ix,f] != 0)[0]
+    #     nav.slip[sat[ix[ix_slip]], f] |= (obs.lli[ix[ix_slip],f] & 1)
+    
+    # TODO: add half-cycle ambiguity handling
 
 
 def udpos(nav):
@@ -598,16 +596,15 @@ def udbias(nav, obsb, obsr, iu, ir):
     ns = len(iu)
     sat = obsr.sat[iu]
 
-    # reset phase-biases for sats with outage
+    # update outage counters and reset phase-biases for sats with outage
+    nav.outc += 1
     for f in range(nav.nf):
         for i in range(uGNSS.MAXSAT):
-            nav.outc[i, f] += 1
             j = IB(i+1, f, nav.na)
             if nav.outc[i,f] > nav.maxout and nav.x[j] != 0.0:
                 trace(3, '  obs outage counter overflow ( sat=%d L%d: n=%d\n' 
                       % (i+1, f+1, nav.outc[i,f]))
                 initx(nav, 0, 0, j)
-                nav.outc[i,f] = 0
             # TODO: set AR minlock
         # update phase bias noise and check for cycle slips and outliers
         for i in range(ns):
@@ -643,9 +640,10 @@ def udbias(nav, obsb, obsr, iu, ir):
         # correct phase-bias offset to ensure phase-code coherency
         offset = offset / namb if namb > 0 else 0
         trace(4, 'phase-code coherency adjust=%.2f, n=%d\n' % (offset, namb))
-        for i in range(uGNSS.MAXSAT):
-            if nav.x[IB(i+1, f, nav.na)] != 0.0:
-                nav.x[IB(i+1, f, nav.na)] += offset
+        ib1 = IB(1, f, nav.na)  # state offset for first sat
+        # add offsest to non-zero states
+        ix = np.where(nav.x[ib1:] != 0)[0]
+        nav.x[ix+ib1] += offset
         
         # set initial states of phase-bias
         for i in range(ns):
@@ -654,6 +652,7 @@ def udbias(nav, obsb, obsr, iu, ir):
                 continue
             freq = gn.sat2freq(sat[i], f, nav)
             initx(nav, bias[i], nav.sig_n0**2, j)
+            nav.outc[sat[i]-1,f] = 0
             trace(3,"     sat=%3d, F=%d: init phase=%.3f\n" % (sat[i],f+1, bias[i]))
 
 
@@ -669,19 +668,10 @@ def udstate(nav, obsr, obsb, iu, ir):
 
 def selsat(nav, obsr, obsb, elb):
     """ select common satellite between rover and base station """
-    # exclude satellite with missing observation and cycle slip for rover
-    idx_u = []
-    for k, sat in enumerate(obsr.sat):
-        if (obsr.P[k, 0] == 0.0 and obsr.P[k, 1] == 0.0):
-            continue
-        idx_u.append(k)
-
-    # exclude satellite with missing observation and cycle slip for base
-    idx_r = []
-    for k, sat in enumerate(obsb.sat):
-        if (obsb.P[k, 0] == 0.0 and obsb.P[k, 1] == 0.0) or elb[k] < nav.elmin:
-            continue
-        idx_r.append(k)
+    # exclude satellite with missing pseudorange or low elevation
+    idx_u = np.unique(np.where(obsr.P!=0)[0])
+    idx_r = np.unique(np.where(obsb.P!=0)[0])
+    idx_r = list(set(idx_r).intersection(np.where(elb >= nav.elmin)[0]))
 
     idx = np.intersect1d(obsr.sat[idx_u], obsb.sat[idx_r], return_indices=True)
     k = len(idx[0])
@@ -709,8 +699,8 @@ def holdamb(nav, xa):
                 nav.fix[i, f] = 3  # hold
             # constraint to fixed ambiguity
             for i in range(1, n):
-                v[nv] = (xa[index[0]]-xa[index[i]]) - \
-                    (nav.x[index[0]]-nav.x[index[i]])
+                v[nv] = (xa[index[0]] - xa[index[i]]) - \
+                    (nav.x[index[0]] - nav.x[index[i]])
                 H[nv, index[0]] = 1.0
                 H[nv, index[i]] = -1.0
                 nv += 1
@@ -727,9 +717,9 @@ def relpos(nav, obsr, obsb, sol):
     nav.dt = gn.timediff(obsr.t, obsb.t)
     ep = gn.time2epoch(obsr.t)
     trace(1,"\n---------------------------------------------------------\n")
-    trace(1,"relpos: nu=%d nr=%d\n" % (len(obsr.sat), len(obsb.sat)))
-    trace(1, '       teph= %04d/%02d/%02d %02d:%02d:%06.3f\n' %           
-          (ep[0], ep[1], ep[2], ep[3], ep[4], ep[5])); 
+    trace(1, "relpos: nu=%d nr=%d\n" % (len(obsr.sat), len(obsb.sat)))
+    trace(1, '        teph= %04d/%02d/%02d %02d:%02d:%06.3f\n' %           
+          (ep[0], ep[1], ep[2], ep[3], ep[4], ep[5])) 
     trace(1,"---------------------------------------------------------\n")
     if abs(nav.dt) > nav.maxage:
         trace(3, 'Age of differential too large: %.2f\n' % nav.dt)
@@ -779,7 +769,6 @@ def relpos(nav, obsr, obsb, sol):
     if stat != gn.SOLQ_NONE:
         # kalman filter measurement update
         tracemat(3, 'before filter x=', nav.x[0:9])
-        #tracemat(3, 'before filter v=', v)
         xp, Pp = gn.filter(nav.x, nav.P, H, v, R)
         tracemat(3, 'after filter x=', xp[0:9])
         posvar = np.sum(np.diag(Pp[0:3])) / 3
@@ -791,11 +780,12 @@ def relpos(nav, obsr, obsb, sol):
         yu, eu = yu[iu,:], eu[iu,:]
         # residual for float solution
         v, H, R = ddres(nav, xp, Pp, yr, er, yu, eu, sats, els, nav.dt, obsr)
-        #valpos(nav, v, R):
+        # validation of float solution, always returns 1, msg to trace file if large residual
+        valpos(nav, v, R)
         
         # save results of kalman filter update
-        nav.x = xp
-        nav.P = Pp
+        nav.x = xp.copy()
+        nav.P = Pp.copy()
         
     # update sat status
     for f in range(nav.nf):
@@ -876,7 +866,9 @@ def rtkpos(nav, rov, base, dir):
         nav.tt = gn.timediff(sol.t, t)
         # relative solution
         relpos(nav, obsr, obsb, sol)
-        print('%.2f: %d' % (sol.t.time % (24 * 3600) + sol.t.sec, sol.stat))
+        ep = gn.time2epoch(sol.t)
+        stdout.write('\r   %2d/%2d/%4d %02d:%02d:%05.2f: %d' % (ep[1], ep[2], ep[0],
+                ep[3], ep[4], ep[5], sol.stat))
         n += 1
         if nav.maxepoch != None and n > nav.maxepoch:
             break

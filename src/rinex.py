@@ -52,7 +52,7 @@ class rnx_decode:
             return timeadd(t, 86400.0)
         if tt > 43200.0:
             return timeadd(t,-86400.0)
-        return t;
+        return t
 
     def decode_nav(self, navfile, nav):
         """decode RINEX Navigation message from file """
@@ -359,9 +359,9 @@ def next_obs(nav, rov, base, dir):
             break
         elif dt * dir < 0:
             rov.index += dir
-            if rov.index < 0 or rov.index > len(rov.obslist) - 1:
-                rov.index -= dir
-                break
+        if rov.index < 0 or rov.index > len(rov.obslist) - 1:
+            rov.index -= dir
+            break
     return obsr, obsb
 
 def rcvstds(nav, obs):

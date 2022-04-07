@@ -12,7 +12,7 @@ from rtkcmn import sat2prn, trace
 # ephemeris parameters
 MAX_ITER_KEPLER = 30
 RTOL_KEPLER = 1e-13
-TSTEP = 60.0  # time step for Glonass orbital calcs
+TSTEP = 120 #60.0  # time step for Glonass orbital calcs
 ERREPH_GLO = 5.0
 
 
@@ -108,14 +108,14 @@ def eph2pos(t, eph):
         Ek = E
         E -= (E - eph.e * np.sin(E) - M) / (1.0 - eph.e * np.cos(E))
 
-    sinE = np.sin(E); cosE = np.cos(E)
+    sinE, cosE = np.sin(E), np.cos(E)
     nus = np.sqrt(1.0 - eph.e**2) * sinE
     nuc = cosE - eph.e
     nue = 1.0 - eph.e * cosE
     u = np.arctan2(nus, nuc) + eph.omg
     r = eph.A * nue 
     i = eph.i0 + eph.idot * tk
-    sin2u = np.sin(2*u); cos2u = np.cos(2*u)
+    sin2u, cos2u = np.sin(2*u), np.cos(2*u)
     u += eph.cus * sin2u + eph.cuc * cos2u
     r += eph.crs * sin2u +eph.crc * cos2u
     i += eph.cis * sin2u + eph.cic * cos2u
@@ -123,7 +123,7 @@ def eph2pos(t, eph):
     y = r * np.sin(u)
     cosi = np.cos(i)
     O = eph.OMG0 + (eph.OMGd - omge) * tk - omge * eph.toes
-    sinO = np.sin(O); cosO = np.cos(O)
+    sinO, cosO = np.sin(O), np.cos(O)
     rs = [x * cosO - y * cosi * sinO, x * sinO + y * cosi * cosO, y * np.sin(i)]
     tk = dtadjust(t, eph.toc)
     dts = eph.f0 + eph.f1 * tk + eph.f2 * tk**2
@@ -173,7 +173,7 @@ def geph2pos(time, geph):
     
     trace(4, 'geph2pos: sat=%d\n' % geph.sat)
     tt = -TSTEP if t < 0 else TSTEP
-    while abs(t) > 1E-7:  #1E-9
+    while abs(t) > 1E-5:  #1E-9
         if abs(t) < TSTEP:
             tt = t
         x = glorbit(tt, x, geph.acc)
@@ -255,7 +255,7 @@ def satposs(obs, nav):
     
     ep = time2epoch(obs.t)
     trace(3, 'satposs  : teph= %04d/%02d/%02d %02d:%02d:%06.3f n=%d ephopt=%d\n' %           
-          (ep[0], ep[1], ep[2], ep[3], ep[4], ep[5], n, 0)); 
+          (ep[0], ep[1], ep[2], ep[3], ep[4], ep[5], n, 0)) 
     
     for i in np.argsort(obs.sat):
         sat = obs.sat[i]
