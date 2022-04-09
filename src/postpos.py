@@ -70,12 +70,14 @@ def procpos(nav, rov, base):
  
     try:
         if nav.filtertype != 'backward':
+            # run forward solution
             firstpos(nav, rov, base, dir=1)
-            rtkpos(nav, rov, base, dir=1) # run forward solution
+            rtkpos(nav, rov, base, dir=1) 
             sol0 = deepcopy(nav.sol)
             savesol(sol0,'forward.pos')
         if nav.filtertype != 'forward':
-            if nav.filtertype == 'combined':
+            # run backward solution
+            if nav.filtertype != 'combined_noreset':
                 # reset filter states
                 rb = nav.rb.copy()
                 eph = nav.eph.copy()
@@ -84,12 +86,12 @@ def procpos(nav, rov, base):
                 nav.rb = rb
                 nav.eph = eph
                 nav.maxepoch = maxepoch
-            elif nav.filtertype == 'combined_noreset':
-                nav.sol = []
-            firstpos(nav, rov, base, dir=-1)
-            rtkpos(nav, rov, base, dir=-1)  # run backward solution
+                firstpos(nav, rov, base, dir=-1)
+            else: # combined_noreset
+                nav.sol = [nav.sol[-1]]
+            rtkpos(nav, rov, base, dir=-1)  
             savesol(nav.sol,'backward.pos')
-        if nav.filtertype == 'combined':
+        if nav.filtertype == 'combined' or nav.filtertype == 'combined_noreset':
             sol = combres(sol0, nav.sol)
             savesol(sol,'combined.pos')
             return sol

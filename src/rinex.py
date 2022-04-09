@@ -6,8 +6,10 @@ Copyright (c) 2022 Tim Everett
 """
 
 import numpy as np
+from copy import deepcopy
 from rtkcmn import uGNSS, rSIG, Eph, Geph, prn2sat, gpst2time, time2gpst, Obs, \
                     epoch2time, timediff, timeadd, utc2gpst
+from ephemeris import satposs
 
 class rnx_decode:
     """ class for RINEX decoder """
@@ -336,6 +338,9 @@ def first_obs(nav, rov, base, dir):
     _, _ =next_obs(nav, rov, base, dir)
     # step back to first obs
     obsr, obsb = next_obs(nav, rov, base, -dir)
+    # save first base obs
+    #nav.obsb = deepcopy(obsb)
+    #nav.rsb, nav.varb, nav.dtsb, nav.svhb = satposs(obsb, nav)
     return obsr, obsb
 
 def next_obs(nav, rov, base, dir):
@@ -343,6 +348,7 @@ def next_obs(nav, rov, base, dir):
     if abs(dir) != 1:
         return [], []
     rov.index += dir   # 1=forward, -1=backward
+    flag = 0
     while True:
         if rov.index < 0 or rov.index >= len(rov.obslist) or \
                 base.index < 0 or base.index >= len(base.obslist):
@@ -350,18 +356,30 @@ def next_obs(nav, rov, base, dir):
         obsr = rov.obslist[rov.index]
         obsb = base.obslist[base.index]
         dt = timediff(obsr.t, obsb.t)
-        if dt * dir > nav.maxage:
-            base.index += dir
-            if base.index < 0 or base.index > len(base.obslist) - 1:
-                base.index -= dir
-                break
-        if np.abs(dt) <= nav.maxage:
+        if -nav.maxage / 2 <= dt <= nav.maxage / 2:
             break
-        elif dt * dir < 0:
-            rov.index += dir
+        if dt  > nav.maxage / 2: #nav.maxage:
+            if dir == 1:
+                base.index += 1
+                flag = 1
+            else:
+                rov.index -= 1
+        else: # dt < -nav.maxage/2
+            if dir == 1:
+                rov.index += 1
+            else:
+                base.index -= 1
+                flag = 1
         if rov.index < 0 or rov.index > len(rov.obslist) - 1:
             rov.index -= dir
             break
+        if base.index < 0 or base.index > len(base.obslist) - 1:
+            base.index -= dir
+            break
+        if flag and nav.interp_base and len(nav.sol) > 0:
+            # save base residuals for next epoch
+            nav.obsb = deepcopy(obsb)
+            nav.rsb, nav.varb, nav.dtsb, nav.svhb = satposs(obsb, nav)
     return obsr, obsb
 
 def rcvstds(nav, obs):

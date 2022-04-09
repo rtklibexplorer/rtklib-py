@@ -235,13 +235,17 @@ class Nav():
         self.slip = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.rcvstd = np.zeros((uGNSS.MAXSAT, self.nf*2))
         self.glofrq = np.zeros(uGNSS.GLOMAX, dtype=int)
-        self.sliplist = []
     
         self.eph_index  = np.zeros(uGNSS.MAXSAT, dtype=int)
         self.tt = 0
         self.maxepoch = None
         self.ns = 0
         self.dt = 0
+        self.obsb = Obs()
+        self.rsb = []
+        self.dtsb = []
+        self.svhb = []
+        self.varb = []
         
 class Sol():
       """" class for solution """  
@@ -669,13 +673,13 @@ def ionmodel(t, pos, az, el, ion=None):
 
 def interpc(coef, lat):
     """ linear interpolation (lat step=15) """
-    i = int(lat/15.0)
+    i = int(lat / 15.0)
     if i < 1:
         return coef[:, 0]
     if i > 4:
         return coef[:, 4]
-    d = lat/15.0-i
-    return coef[:, i-1]*(1.0-d)+coef[:, i]*d
+    d = lat / 15.0 - i
+    return coef[:, i-1] * (1.0 - d) + coef[:, i] * d
 
 
 def antmodel(nav, el, nf, rtype):
