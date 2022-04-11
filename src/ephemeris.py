@@ -138,10 +138,10 @@ def deq(x, acc):
     """glonass orbit differential equations """
     xdot = np.zeros(6)
     r2 = np.dot(x[0:3], x[0:3])
-    r3 = r2 * np.sqrt(r2)
-    omg2 = rCST.OMGE_GLO**2
     if r2 <= 0.0:
         return xdot
+    r3 = r2 * np.sqrt(r2)
+    omg2 = rCST.OMGE_GLO**2
 
     a = 1.5 * rCST.J2_GLO * rCST.MU_GLO * rCST.RE_GLO**2 / r2 / r3 
     b = 5.0 * x[2]**2 / r2 
@@ -169,7 +169,7 @@ def geph2pos(time, geph):
     """ GLONASS ephemeris to satellite position and clock bias """
     t = timediff(time, geph.toe)
     dts = -geph.taun + geph.gamn * t
-    x = [*geph.pos, *geph.vel]
+    x = np.array((*geph.pos, *geph.vel))
     
     trace(4, 'geph2pos: sat=%d\n' % geph.sat)
     tt = -TSTEP if t < 0 else TSTEP

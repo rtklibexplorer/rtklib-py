@@ -550,12 +550,25 @@ def detslp_gf(nav, obsb, obsr, iu, ir):
             
 def detslp_ll(nav, obs, ix):
     """ detect cycle slip from rinex file flags """
-    sat = obs.sat[ix] - 1
+    ixsat = obs.sat[ix] - 1 
     for f in range(nav.nf):
-        ix_slip = np.where(obs.L[ix,f] != 0)[0]
-        nav.slip[sat[ix_slip], f] |= (obs.lli[ix[ix_slip],f] & 1)
-    # TODO: add handling for half-cycle ambiguity transitions
-    # TODO: modify backwards filter behavior to match RTKLIB???
+        ixL = np.where(obs.L[ix,f] != 0)[0]
+        if nav.tt >= 0: # forward
+            nav.slip[ixsat[ixL],f] |= (obs.lli[ix[ixL],f] & 1)
+        else: # backward
+            nav.slip[ixsat[ixL],f] |= (nav.prev_lli[ixsat[ixL],f] & 1)
+        
+        # detect slip by parity unknown flag transition in LLI 
+        # hc_slip = np.where((obs.lli[ix[ixL],f] & 2) != 
+        #                    (nav.prev_lli[ixsat[ixL],f] & 2))[0]
+        # if len(hc_slip) > 0:
+        #     nav.slip[ixsat[hc_slip],f] |= 1
+        
+        # output results to trace
+        ixslip = np.where(nav.slip[ixsat[ixL],f] > 0)[0]
+        slipsats = ixsat[ixslip] + 1
+        if len(slipsats) > 0:
+            trace(3, 'slip detected from LLI flags: f=%d, sats=%s\n' % (f, str(slipsats)))
 
 
 def udpos(nav):
@@ -858,6 +871,11 @@ def relpos(nav, obsr, obsb, sol):
             if obsr.L[iu[i],f] != 0:
                 nav.pt[1,sat-1,f] = obsr.t
                 nav.ph[1,sat-1,f] = obsr.L[iu[i],f]
+    # save current LLI
+    nav.prev_lli[:,:] = 0
+    for f in range(nav.nf):
+        nav.prev_lli[obsr.sat-1,f] = obsr.lli[:,f]
+        nav.prev_lli[obsb.sat-1,f] |= obsb.lli[:,f]
 
             
 def rtkpos(nav, rov, base, dir):

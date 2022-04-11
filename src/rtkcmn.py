@@ -233,6 +233,7 @@ class Nav():
         self.rejc = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.lock = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.slip = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
+        self.prev_lli = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.rcvstd = np.zeros((uGNSS.MAXSAT, self.nf*2))
         self.glofrq = np.zeros(uGNSS.GLOMAX, dtype=int)
     

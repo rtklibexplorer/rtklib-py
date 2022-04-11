@@ -17,6 +17,7 @@ maxage = 0.6*2              # mag age of differential, set at half base sample r
 maxout = 10               # maximum outage [epoch]
 thresdop = 0             # cycle slip detection by doppler method
 thresslip = 0.10         # cycle slip detection by geom-free LC
+interp_base = False       # interpret base observations
 
 # ------------  Kalman Filter Statistics ------------------------
 eratio = [300, 300]
@@ -61,9 +62,9 @@ skip_sig_tbl = {uGNSS.GPS: [],   # skip these obs
                 uGNSS.GLO: [],
                 uGNSS.GAL: [],
                 uGNSS.QZS: []}
-gnss_t = [uGNSS.GPS, uGNSS.GAL]  # leave out GLO until hardware biases addressed
+gnss_t = [uGNSS.GPS, uGNSS.GLO, uGNSS.GAL]
 # set these from table below
-freq_ix0 = {uGNSS.GPS: 0, uGNSS.GAL: 0} # L1
+freq_ix0 = {uGNSS.GPS: 0, uGNSS.GLO: 4, uGNSS.GAL: 0}# L1
 freq_ix1 = {uGNSS.GPS: 1, uGNSS.GLO: 5, uGNSS.GAL: 3} # L2/E5b
 
 # ---------- Frequencies currently supported-------------
