@@ -1,22 +1,22 @@
 # configuration settings
 
-from rtkcmn import uGNSS
+from rtkcmn import uGNSS, rSIG
 
 # ----------- PPK options -------------------------------
 nf = 2                   # num frequencies ( 1 or 2)
 pmode = 'kinematic'      # static, kinematic
-filtertype = 'forward'  # forward, backward, combined, combined_noreset
+filtertype = 'backward'  # forward, backward, combined, combined_noreset
 use_sing_pos = False     # run initial single precision sol each epoch, not
                          # necessary unless receiever clock errors are large
 elmin = 15
-cnr_min = 30             # min signal strength
+cnr_min = 35             # min signal strength
 excsats = []             # excluded sats
 
 maxinno = 1              # outlier threshold for phase
 maxage = 0.6*2              # mag age of differential, set at half base sample rate for now
-maxout = 10               # maximum outage [epoch]
-thresdop = 0             # cycle slip detection by doppler method
-thresslip = 0.10         # cycle slip detection by geom-free LC
+maxout = 20               # maximum outage [epoch]
+thresdop = 6             # cycle slip detection by doppler method
+thresslip = 0.05         # cycle slip detection by geom-free LC
 interp_base = False       # interpret base observations
 
 # ------------  Kalman Filter Statistics ------------------------
@@ -37,6 +37,7 @@ thresar = 3              # AR threshold
 thresar1 = 0.1           # max pos variation for AR
 elmaskar = 15            # elevation mask for AR
 var_holdamb = 0.1
+mindropsats = 10
 
 # ----------- Single precision options ----------------------------
 sing_p0 = 100
@@ -52,17 +53,29 @@ sing_err = [0.0, 0.3, 0.3]
 rb = [0, 0, 0]
 
 # initial rover position/velocity for alignment to RTKLIB solution for debug
+#rr_f =[-1276972.378274, -4717193.586414,  4087245.657488,
+#       -0.010286,       -0.015413,        0.015250]
+#rr_b = [-1276984.364211, -4717218.261086,  4087215.802648,
+#        -0.005020,        0.000248,        0.008825]
 # Set to zero to use standard precision computed starting position
-rr_f = rr_b  = [0, 0, 0]
+rr_f = [0, 0, 0, 0, 0, 0]
+rr_b  = [0, 0, 0, 0, 0, 0]
 
 
 # ----------- Configure observation signals ----------------
+
+gnss_t = [uGNSS.GPS, uGNSS.GLO, uGNSS.GAL]
+
+sig_tbl = {'1C': rSIG.L1C, '1X': rSIG.L1X, '1W': rSIG.L1W,
+           '2W': rSIG.L2W, '2C': rSIG.L2C, '2X': rSIG.L2X,
+           '5Q': rSIG.L5Q, '5X': rSIG.L5X, '7Q': rSIG.L7Q,
+           '7X': rSIG.L7X}
 
 skip_sig_tbl = {uGNSS.GPS: [],   # skip these obs
                 uGNSS.GLO: [],
                 uGNSS.GAL: [],
                 uGNSS.QZS: []}
-gnss_t = [uGNSS.GPS, uGNSS.GLO, uGNSS.GAL]
+
 # set these from table below
 freq_ix0 = {uGNSS.GPS: 0, uGNSS.GLO: 4, uGNSS.GAL: 0}# L1
 freq_ix1 = {uGNSS.GPS: 1, uGNSS.GLO: 5, uGNSS.GAL: 3} # L2/E5b

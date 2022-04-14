@@ -267,7 +267,7 @@ def satposs(obs, nav):
         eph = seleph(nav, t, sat)
         if eph is None:
             svh[i] = 1
-            trace(3, 'No ephemeris found: sat=%d\n' % sat)
+            trace(2, 'No broadcast ephemeris: sat=%d\n' % sat)
             continue
         svh[i] = eph.svh
         # satellite clock bias by broadcast ephemeris

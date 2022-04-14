@@ -65,10 +65,10 @@ class uGNSS(IntEnum):
     """ class for GNSS constants """
     GPS = 0
     SBS = 1
-    GAL = 2
+    GLO = 2
     BDS = 3
     QZS = 5
-    GLO = 6
+    GAL = 6
     IRN = 7
     GNSSMAX = 8
     GPSMAX = 32
@@ -233,10 +233,15 @@ class Nav():
         self.rejc = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.lock = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.slip = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
-        self.prev_lli = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
+        self.prev_lli = np.zeros((uGNSS.MAXSAT, self.nf, 2), dtype=int)
+        self.prev_fix = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.rcvstd = np.zeros((uGNSS.MAXSAT, self.nf*2))
         self.glofrq = np.zeros(uGNSS.GLOMAX, dtype=int)
-    
+        
+        self.prev_ratio1 = 0
+        self.prev_ratio2 = 0
+        self.nb_ar = 0
+        
         self.eph_index  = np.zeros(uGNSS.MAXSAT, dtype=int)
         self.tt = 0
         self.maxepoch = None
@@ -494,7 +499,7 @@ def satexclude(sat, var, svh, nav):
     if sat in nav.excsats:
         return 1
     if svh:
-       trace(3, 'unhealthy satellite: sat=%d svh=%d\n' % (sat, svh)) 
+       trace(3, 'unhealthy satellite: sat=%d svh=%x\n' % (sat, svh)) 
        return 1
     if var > MAX_VAR_EPH:
         trace(3, 'invalid ura satellite: sat=%3d ura=%.2f\n' % (sat, np.sqrt(var)))

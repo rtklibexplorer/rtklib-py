@@ -18,22 +18,12 @@ class rnx_decode:
     def __init__(self, cfg):
         self.ver = -1.0
         self.fobs = None
-        self.freq_tbl = {uGNSS.GPS: {rSIG.L1C: 0, rSIG.L1X: 0, rSIG.L2W: 1, rSIG.L2L: 1,  
-                                     rSIG.L2X: 1, rSIG.L5Q: 2, rSIG.L5X: 2},
-                         uGNSS.GAL: {rSIG.L1C: 0, rSIG.L1X: 0, rSIG.L5Q: 2, rSIG.L5X: 2, 
-                                     rSIG.L7Q: 3, rSIG.L7X: 3},
-                         uGNSS.GLO: {rSIG.L1C: 0, rSIG.L2C: 1}, 
-                         uGNSS.QZS: {rSIG.L1C: 0, rSIG.L1X: 0, rSIG.L2W: 1, rSIG.L2L: 1,  
-                                     rSIG.L2X: 1, rSIG.L5Q: 2, rSIG.L5X: 2}}
         self.gnss_tbl = {'G': uGNSS.GPS, 'E': uGNSS.GAL, 'R': uGNSS.GLO, 'J': uGNSS.QZS}
-        self.sig_tbl = {'1C': rSIG.L1C, '1X': rSIG.L1X, '1W': rSIG.L1W,
-                        '2W': rSIG.L2W, '2L': rSIG.L2L, '2X': rSIG.L2X,
-                        '5Q': rSIG.L5Q, '5X': rSIG.L5X, '7Q': rSIG.L7Q,
-                        '7X': rSIG.L7X}
+        self.sig_tbl = cfg.sig_tbl
         self.skip_sig_tbl = cfg.skip_sig_tbl
         self.nf = 4
-        self.sigid = np.ones((uGNSS.GNSSMAX, rSIG.SIGMAX*3), dtype=int)*rSIG.NONE
-        self.typeid = np.ones((uGNSS.GNSSMAX, rSIG.SIGMAX*3), dtype=int)*rSIG.NONE
+        self.sigid = np.ones((uGNSS.GNSSMAX, rSIG.SIGMAX*3), dtype=int) * rSIG.NONE
+        self.typeid = np.ones((uGNSS.GNSSMAX, rSIG.SIGMAX*3), dtype=int) * rSIG.NONE
         self.nsig = np.zeros((uGNSS.GNSSMAX), dtype=int)
         self.nband = np.zeros((uGNSS.GNSSMAX), dtype=int)
         self.pos = np.array([0, 0, 0])

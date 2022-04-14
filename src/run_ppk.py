@@ -74,7 +74,7 @@ print('Reading nav data...')
 rov.decode_nav(navfile, nav)
 
 # calculate solution
-print('Calculating solution...')
+print('Calculating solution ...\n')
 sol = procpos(nav, rov, base)
 
 # save solution to file

@@ -1,6 +1,6 @@
 # configuration settings
 
-from rtkcmn import uGNSS
+from rtkcmn import uGNSS, rSIG
 
 # ----------- PPK options -------------------------------
 nf = 2                   # num frequencies ( 1 or 2)
@@ -60,12 +60,17 @@ rr_f = rr_b  = [0, 0, 0]
 
 
 # ----------- Configure observation signals ----------------
+gnss_t = [uGNSS.GPS, uGNSS.GLO, uGNSS.GAL]
 
+sig_tbl = {'1C': rSIG.L1C, '1X': rSIG.L1X, '1W': rSIG.L1W,
+           '2W': rSIG.L2W, '2L': rSIG.L2L, '2X': rSIG.L2X,
+           '5Q': rSIG.L5Q, '5X': rSIG.L5X, '7Q': rSIG.L7Q,
+           '7X': rSIG.L7X}
 skip_sig_tbl = {uGNSS.GPS: [],   # skip these obs
                 uGNSS.GLO: [],
                 uGNSS.GAL: [],
                 uGNSS.QZS: []}
-gnss_t = [uGNSS.GPS, uGNSS.GLO, uGNSS.GAL]
+
 # set these from table below
 freq_ix0 = {uGNSS.GPS: 0, uGNSS.GLO: 4, uGNSS.GAL: 0} # L1
 freq_ix1 = {uGNSS.GPS: 2, uGNSS.GLO: 5, uGNSS.GAL: 2} # L5

@@ -8,7 +8,7 @@ Copyright (c) 2022 Tim Everett
 import numpy as np
 from numpy.linalg import inv, norm
 from sys import stdout
-from copy import deepcopy
+from copy import copy, deepcopy
 import rtkcmn as gn
 from rtkcmn import rCST, DTTOL, sat2prn, sat2freq, timediff, xyz2enu
 import rinex as rn
@@ -29,9 +29,6 @@ def rtkinit(cfg):
     nav.filtertype = cfg.filtertype
     # add rover vel and accel states for kinematic solution
     nav.na = nav.nq = 3 if nav.pmode == 'static' else 9
-    nav.ratio = 0
-    nav.thresar = [cfg.thresar]
-    nav.thresar1 = cfg.thresar1
     nav.nx = nav.na + uGNSS.MAXSAT * nav.nf
     nav.x = np.zeros(nav.nx)
     nav.P = np.zeros((nav.nx, nav.nx))
@@ -46,9 +43,6 @@ def rtkinit(cfg):
     nav.rb = cfg.rb
 
     # parameter for RTK/PPK    
-    nav.eratio = cfg.eratio
-    nav.efact = cfg.efact
-    nav.err = np.array(cfg.err) 
     nav.use_sing_pos = cfg.use_sing_pos
     nav.cnr_min = cfg.cnr_min
     nav.maxout = cfg.maxout  # maximum outage [epoch]
@@ -58,12 +52,8 @@ def rtkinit(cfg):
     nav.freq = cfg.freq
     nav.dfreq_glo = cfg.dfreq_glo
     nav.interp_base = cfg.interp_base
-   
-    nav.armode = cfg.armode
-    nav.elmaskar = np.deg2rad(cfg.elmaskar)
     nav.gnss_t = cfg.gnss_t
     nav.maxinno = cfg.maxinno
-    nav.var_holdamb = cfg.var_holdamb
     nav.thresdop = cfg.thresdop
     nav.thresslip = cfg.thresslip
     nav.maxage = cfg.maxage
@@ -71,6 +61,20 @@ def rtkinit(cfg):
     nav.accelv = cfg.accelv
     nav.prnbias = cfg.prnbias
     
+    # ambiguity resolution
+    nav.armode = cfg.armode
+    nav.ratio = 0
+    nav.thresar = cfg.thresar
+    nav.thresar1 = cfg.thresar1
+    nav.var_holdamb = cfg.var_holdamb
+    nav.elmaskar = np.deg2rad(cfg.elmaskar)
+    nav.mindropsats = cfg.mindropsats
+    nav.excsat_ix = 0
+    
+    # statistics
+    nav.efact = cfg.efact
+    nav.eratio = cfg.eratio
+    nav.err = np.array(cfg.err) 
     nav.sig_p0 = cfg.sig_p0
     nav.sig_v0 = cfg.sig_v0
     nav.sig_n0 = cfg.sig_n0
@@ -309,8 +313,8 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                     nav.vsat[si,frq] = 1
                     nav.vsat[sj,frq] = 1
                 #trace(3,'sys=%d f=%d,i=%d,j=%d\n' % (sys,f,i,j))
-                trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f out=%2d x=%13.3f\n" %
-                      (sat[i], sat[j], 'LP'[code], frq+1, v[nv], Ri[nv], Rj[nv], nav.outc[sat[j]-1,frq],x[jj]))
+                trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f lock=%2d x=%13.3f\n" %
+                      (sat[i], sat[j], 'LP'[code], frq+1, v[nv], Ri[nv], Rj[nv], nav.lock[sat[j]-1,frq],x[jj]))
                 nv += 1
                 nb[b] += 1
             b += 1
@@ -356,40 +360,50 @@ def ddidx(nav, sats):
     #na = nav.na
     ix = np.zeros((ns, 2), dtype=int)
     # clear fix flag for all sats (1=float, 2=fix)
-    nav.fix = np.zeros((ns, nav.nf), dtype=int)
+    nav.fix[:,:] = 0
+    # step through constellations
     for m in range(uGNSS.GNSSMAX):
-        k = nav.na
-        for f in range(nav.nf): # step through freqs
+        k = nav.na  # state index for first sat
+        # step through freqs
+        for f in range(nav.nf):
+            # look for first valid sat (i=state index, i-k=sat index)
             for i in range(k, k + ns):
-                sat_i = i - k + 1
-                sys = nav.sysprn[sat_i][0]
-                if (sys != m): # or sys not in nav.gnss_t:
+                sati = i - k + 1
+                # if sati not in sats:
+                #     xxx=1
+                sys = nav.sysprn[sati][0]
+                # skip if sat not active
+                if nav.x[i] == 0.0  or sys != m or nav.vsat[sati-1,f] == 0:
                     continue
-                if sat_i not in sats or nav.x[i] == 0.0 \
-                   or nav.vsat[sat_i-1, f] <= 0:
-                    continue
-                if nav.el[sat_i-1] >= nav.elmaskar:
+                if nav.lock[sati-1,f] >= 0 and nav.slip[sati-1,f] & 2 == 0 and \
+                        nav.el[sati-1] >= nav.elmaskar:
                     # set sat to use for fixing ambiguity if meets criteria
-                    nav.fix[sat_i-1, f] = 2 # fix
-                    break
-                else:
-                    nav.fix[sat_i-1, f] = 1 # float
+                    nav.fix[sati-1,f] = 2 # fix
+                    break # break out of loop if find good sat
+                else: # don't use this sat for fixing ambiguity
+                    nav.fix[sati-1,f] = 1 # float
+            if nav.fix[sati-1,f] != 2: # no good sat found
+                continue
+            n = 0  # count of sat pairs for this freq/constellation
+            # step through all sats (j=state index, j-k=sat index, i-k=first good sat)
             for j in range(k, k + ns):
-                sat_j = j - k + 1
-                sys = nav.sysprn[sat_j][0]
-                if (sys != m): # or sys not in nav.gnss_t:
+                satj = j - k + 1
+                sys = nav.sysprn[satj][0]
+                if i == j or nav.x[j] == 0.0 or sys != m or nav.vsat[satj-1,f] <= 0:
                     continue
-                if i == j or sat_j not in sats or nav.x[j] == 0.0 \
-                   or nav.vsat[sat_j-1, f] <= 0:
-                    continue
-                if nav.el[sat_j-1] >= nav.elmaskar:
+                if nav.lock[satj-1,f] >= 0 and nav.slip[satj-1,f] & 2 == 0 and \
+                        nav.el[satj-1] >= nav.elmaskar:
                     # set D coeffs to subtract sat j from sat i
-                    ix[nb, :] = [i, j]
-                    ref.append(sat_i)
-                    fix.append(sat_j)
-                    # inc # of sats used for fix
-                    nb += 1
-                    nav.fix[sat_j-1, f] = 2 # fix
+                    ix[nb, :] = [i,j] # state indices of ref bias and target bias
+                    ref.append(sati)
+                    fix.append(satj)
+                    nav.fix[satj-1,f] = 2 # fix
+                    nb += 1 # increment total count 
+                    n += 1 # inc count in freq/constellation
+                else: # don't use this sat for fixing ambiguity
+                    nav.fix[satj-1,f] = 1 # float
+            if n == 0: # don't use ref sat if no sat pairs
+                nav.fix[sati-1,f] = 1 
             k += ns
     ix = np.resize(ix, (nb, 2))
     if nb > 0:
@@ -429,9 +443,9 @@ def resamb_lambda(nav, sats):
     na = nav.na
     xa = np.zeros(na)
     ix = ddidx(nav, sats)
-    nb = len(ix)
+    nav.nb_ar = nb = len(ix)
     if nb <= 0:
-        print("no valid DD")
+        trace(3, 'resamb_lambda: no valid DD\n')
         return -1, -1
 
     # y=D*xc, Qb=D*Qc*D', Qab=Qac*D'
@@ -446,10 +460,10 @@ def resamb_lambda(nav, sats):
     b, s = mlambda(y, Qb)
     tracemat(3,'N(1)=      ', b[:,0], '7.3f')
     tracemat(3,'N(2)=      ', b[:,1], '7.3f')
-    ratio = s[1] / s[0]
-    if s[0] <= 0.0 or ratio >= nav.thresar[0]:
+    nav.ratio = s[1] / s[0]
+    if s[0] <= 0.0 or nav.ratio >= nav.thresar:
         trace(3,'resamb : validation OK (nb=%d ratio=%.2f\n s=%.2f/%.2f\n' 
-              % (nb, ratio, s[1], s[0]))
+              % (nb, nav.ratio, s[1], s[0]))
         nav.xa = nav.x[0:na].copy()
         nav.Pa = nav.P[0:na, 0:na].copy()
         bias = b[:, 0]
@@ -462,8 +476,67 @@ def resamb_lambda(nav, sats):
         xa = restamb(nav, bias, nb)
     else:
         trace(3,'ambiguity validation failed (nb=%d ratio=%.2f\n s=%.2f/%.2f'
-              % (nb, ratio, s[1], s[0]))
+              % (nb, nav.ratio, s[1], s[0]))
         nb = 0
+    return nb, xa
+
+
+def manage_amb_LAMBDA(nav, sats, stat, posvar):
+    """ resolve integer ambiguity by LAMBDA using partial fix techniques and 
+    multiple attempts """
+    
+    # skip AR if don't meet criteria 
+    if stat != gn.SOLQ_FLOAT or posvar > nav.thresar1:
+        nav.ratio, nav.prev_ratio1, nav.prev_ratio2, nav.nb_ar = 0, 0, 0, 0
+        return 0, []
+
+    # if no fix on previous sample and enough sats, exclude next sat in list
+    excflag = False
+    if nav.prev_ratio2 < nav.thresar and nav.nb_ar >= nav.mindropsats:
+        # find and count sats used last time for AR
+        arsats = np.where(nav.prev_fix == 2)[0]
+        excflag = 0
+        if  nav.excsat_ix < len(arsats):
+            excsat = arsats[nav.excsat_ix] + 1
+            lockc = copy(nav.lock[excsat-1]) # save lock count
+            # remove sat from AR long enough to enable hold if stays fixed
+            nav.lock[excsat-1] = -nav.nb_ar
+            trace(3, 'AR: exclude sat %d\n' % excsat);
+            excflag = True
+            nav.excsat_ix += 1
+        else:
+            nav.excsat_ix = 0 # exclude none and reset to beginning of list 
+    
+    # initial ambiguity resolution attempt, include all enabled sats
+    nb, xa = resamb_lambda(nav, sats)
+    ratio1 = nav.ratio
+    rerun = False
+    # if results are much poorer than previous epoch or dropped below AR ratio 
+    # thresh, remove new sats
+    trace(3, 'lambda: nb=%d r1= %.3f r2=%.3f r=%.3f\n' % ((nb, nav.prev_ratio1, nav.prev_ratio2, nav.ratio)))
+    if nb >= 0 and nav.prev_ratio2 >= nav.thresar and (nav.ratio < nav.thresar 
+           or (nav.ratio < nav.thresar * 1.1 and nav.ratio < nav.prev_ratio1 / 2.0)):
+        trace(3, 'low ratio: check for new sat\n')
+        dly = 2
+        ix = np.where((nav.fix == 2) & (nav.lock == 0))
+        for i,f in zip(ix[0],ix[1]):
+            nav.lock[i,f] = -dly
+            dly +=2
+            trace(3, 'remove sat %d:%d lock=%d\n' % (i+1, f, nav.lock[i,f]))
+
+            rerun = True
+    
+    # rerun if filter removed any sats
+    if rerun:
+        trace(3, 'rerun AR with new sat removed\n')
+        nb, xa = resamb_lambda(nav, sats)
+        
+    # restore excluded sat if still no fix or significant increase in ar ratio 
+    if excflag and nav.ratio < nav.thresar and nav.ratio < 1.5* nav.prev_ratio2:
+        nav.lock[excsat-1] = lockc
+        trace(3, 'AR: restore sat %d\n' % excsat)
+       
+    nav.prev_ratio1, nav.prev_ratio2  = ratio1, nav.ratio
     return nb, xa
 
 
@@ -548,27 +621,32 @@ def detslp_gf(nav, obsb, obsr, iu, ir):
             trace(3, "slip detected GF jump (sat=%2d L1-L2 dGF=%.3f)\n" %
                 (sat + 1, gf0 - gf1))
             
-def detslp_ll(nav, obs, ix):
+def detslp_ll(nav, obs, ix, rcv):
     """ detect cycle slip from rinex file flags """
+    
+    # retrieve previous LLI
+    LLI = nav.prev_lli[:,:,rcv]
+    
     ixsat = obs.sat[ix] - 1 
     for f in range(nav.nf):
         ixL = np.where(obs.L[ix,f] != 0)[0]
         if nav.tt >= 0: # forward
-            nav.slip[ixsat[ixL],f] |= (obs.lli[ix[ixL],f] & 1)
+            nav.slip[ixsat[ixL],f] |= (obs.lli[ix[ixL],f] & 3)
         else: # backward
-            nav.slip[ixsat[ixL],f] |= (nav.prev_lli[ixsat[ixL],f] & 1)
+            nav.slip[ixsat[ixL],f] |= (LLI[ixsat[ixL],f] & 3)
         
         # detect slip by parity unknown flag transition in LLI 
-        # hc_slip = np.where((obs.lli[ix[ixL],f] & 2) != 
-        #                    (nav.prev_lli[ixsat[ixL],f] & 2))[0]
-        # if len(hc_slip) > 0:
-        #     nav.slip[ixsat[hc_slip],f] |= 1
+        hc_slip = np.where((obs.lli[ix[ixL],f] & 2) != 
+                  (LLI[ixsat[ixL],f] & 2))[0]
+        if len(hc_slip) > 0:
+            nav.slip[ixsat[ixL[hc_slip]],f] |= 1
         
         # output results to trace
-        ixslip = np.where(nav.slip[ixsat[ixL],f] > 0)[0]
-        slipsats = ixsat[ixslip] + 1
+        ixslip = np.where((nav.slip[ixsat[ixL],f] & 1) != 0)[0]
+        slipsats = ixsat[ixL[ixslip]] + 1
         if len(slipsats) > 0:
             trace(3, 'slip detected from LLI flags: f=%d, sats=%s\n' % (f, str(slipsats)))
+            trace(3, '   slip=%s\n' % str(nav.slip[ixsat[ixL[ixslip]], f]))
 
 
 def udpos(nav):
@@ -616,8 +694,8 @@ def udbias(nav, obsb, obsr, iu, ir):
     trace(3, 'udbias  : tt=%.3f ns=%d\n' % (nav.tt, len(iu)))
     
     # cycle slip detection from receiver flags
-    detslp_ll(nav, obsb, ir)
-    detslp_ll(nav, obsr, iu)
+    detslp_ll(nav, obsb, ir, 0)
+    detslp_ll(nav, obsr, iu, 1)
     # cycle slip detection by doppler and geom-free
     detslp_dop(0, nav, obsb, ir) # base
     detslp_dop(1, nav, obsr, iu) # rover
@@ -660,7 +738,7 @@ def udbias(nav, obsb, obsr, iu, ir):
             
             if cp == 0 or pr == 0 or freq == 0:
                 continue
-			# estimate bias in cycles
+            # estimate bias in cycles
             bias[i] = cp - pr * freq / rCST.CLIGHT
             # offset = sum of (bias - phase-bias) for all valid sats in meters
             x = nav.x[IB(sat[i], f, nav.na)]
@@ -685,7 +763,7 @@ def udbias(nav, obsb, obsr, iu, ir):
             initx(nav, bias[i], nav.sig_n0**2, j)
             nav.outc[sat[i]-1,f] = 0
             nav.rejc[sat[i]-1,f] = 0
-            nav.slip[sat[i]-1,f] = 0
+            nav.lock[sat[i]-1,f] = 0
             trace(3,"     sat=%3d, F=%d: init phase=%.3f\n" % (sat[i],f+1, bias[i]))
 
 
@@ -701,6 +779,8 @@ def udstate(nav, obsr, obsb, iu, ir):
 
 def selsat(nav, obsr, obsb, elb):
     """ select common satellite between rover and base station """
+    
+    trace(3, 'selsat  : nu=%d nr=%d\n' % (len(obsr.sat), len(obsb.sat)));
     # exclude satellite with missing pseudorange or low elevation
     idx_u = np.unique(np.where(obsr.P!=0)[0])
     idx_r = np.unique(np.where(obsb.P!=0)[0])
@@ -742,7 +822,8 @@ def holdamb(nav, xa):
         # update states with constraints
         nav.x, nav.P, _ = gn.filter(nav.x, nav.P, H[0:nv, :], v[0:nv], R)
     return 0
-
+        
+        
 def relpos(nav, obsr, obsb, sol):
     """ relative positioning for PPK """
     
@@ -832,10 +913,10 @@ def relpos(nav, obsr, obsb, sol):
         nav.outc[ix,f] = 0
         if f == 0:
             nav.ns = len(ix)
-
-    # ambiguity resolution
-    if stat == gn.SOLQ_FLOAT and nav.armode > 0 and posvar < nav.thresar1:
-        nb, xa = resamb_lambda(nav, sats)
+            
+    # resolve integer ambiguities
+    if nav.armode > 0:
+        nb, xa = manage_amb_LAMBDA(nav, sats, stat, posvar)
         if nb > 0:
             yu, eu, el = zdres(nav, obsr, rs, dts, svh, var, xa[0:3], 1)
             yu, eu, el = yu[iu, :], eu[iu, :], el[iu]
@@ -844,7 +925,7 @@ def relpos(nav, obsr, obsb, sol):
                 if nav.armode == 3:
                     holdamb(nav, xa)
                 stat = gn.SOLQ_FIX
-    
+        
     # save solution unless none
     if stat != gn.SOLQ_NONE:
         if stat == gn.SOLQ_FIX: 
@@ -871,11 +952,17 @@ def relpos(nav, obsr, obsb, sol):
             if obsr.L[iu[i],f] != 0:
                 nav.pt[1,sat-1,f] = obsr.t
                 nav.ph[1,sat-1,f] = obsr.L[iu[i],f]
-    # save current LLI
-    nav.prev_lli[:,:] = 0
+    # save current LLI and fix status
+    nav.prev_lli[:,:], nav.slip[:,:] = 0, 0
     for f in range(nav.nf):
-        nav.prev_lli[obsr.sat-1,f] = obsr.lli[:,f]
-        nav.prev_lli[obsb.sat-1,f] |= obsb.lli[:,f]
+        nav.prev_lli[obsb.sat-1,f,0] = obsb.lli[:,f]
+        nav.prev_lli[obsr.sat-1,f,1] = obsr.lli[:,f]
+    if nav.armode > 0:
+        nav.prev_fix = copy(nav.fix)
+        # update lock counts for sats used in fix and disabled sats (lock < 0)
+        for f in range(nav.nf):
+            ix = np.where(((nav.nb_ar > 0) & (nav.fix[:,f] == 2)) | (nav.lock[:,f] < 0))[0]
+            nav.lock[ix,f] += 1
 
             
 def rtkpos(nav, rov, base, dir):
