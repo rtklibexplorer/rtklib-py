@@ -24,14 +24,14 @@ def LD(Q):
     d = np.zeros(n)
     A = Q.copy()
     for i in range(n-1, -1, -1):
-        d[i] = A[i, i]
+        d[i] = A[i,i]
         if d[i] <= 0.0:
             print('LD Factorization error')
             raise SystemExit
-        L[i, :i+1] = A[i, :i+1]/np.sqrt(d[i])
+        L[i,:i+1] = A[i,:i+1] / np.sqrt(d[i])
         for j in range(i):
-            A[j, :j+1] -= L[i, :j+1]*L[i, j]
-        L[i, :i+1] /= L[i, i]
+            A[j,:j+1] -= L[i,:j+1] * L[i,j]
+        L[i,:i+1] /= L[i,i]
 
     return L, d
 
@@ -45,8 +45,8 @@ def reduction(L, d):
         if j <= k:
             for i in range(j+1, n):
                 # L,Z=gauss(L,Z,i,j)
-                mu = np.round(L[i,j])
-                L[i:,j] -= mu * L[i:,i]   
+                mu = round(L[i,j])
+                L[i:,j] -= mu * L[i:,i]
                 Z[:,j] -= mu * Z[:,i]
 
         delta = d[j] + L[j+1,j]**2 * d[j+1]

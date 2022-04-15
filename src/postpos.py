@@ -81,10 +81,12 @@ def procpos(nav, rov, base):
                 # reset filter states
                 rb = nav.rb.copy()
                 eph, geph = nav.eph.copy(), nav.geph.copy()
+                glofrq = nav.glofrq.copy()
                 maxepoch = nav.maxepoch
                 nav = rtkinit(cfg)
                 nav.rb = rb
                 nav.eph, nav.geph = eph, geph
+                nav.glofrq = glofrq
                 nav.maxepoch = maxepoch
                 firstpos(nav, rov, base, dir=-1)
             else: # combined_noreset

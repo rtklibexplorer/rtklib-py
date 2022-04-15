@@ -485,9 +485,13 @@ def manage_amb_LAMBDA(nav, sats, stat, posvar):
     """ resolve integer ambiguity by LAMBDA using partial fix techniques and 
     multiple attempts """
     
+    trace(3, 'posvar=%.6f\n' % posvar)
+    trace(3, 'prevRatios = %.3f %.3f\n' % (nav.prev_ratio1, nav.prev_ratio2))
+    
     # skip AR if don't meet criteria 
     if stat != gn.SOLQ_FLOAT or posvar > nav.thresar1:
         nav.ratio, nav.prev_ratio1, nav.prev_ratio2, nav.nb_ar = 0, 0, 0, 0
+        trace(3, 'Skip AR\n')
         return 0, []
 
     # if no fix on previous sample and enough sats, exclude next sat in list
@@ -595,6 +599,10 @@ def detslp_dop(rcv, nav, obs, ix):
 
 def detslp_gf(nav, obsb, obsr, iu, ir):
     """ detect cycle slip with geometry-free LC """
+    
+    # skip if check disabled
+    if nav.thresslip == 0:
+        return
     ns = len(iu)
     _c = rCST.CLIGHT
     for i in range(ns):
@@ -608,11 +616,13 @@ def detslp_gf(nav, obsb, obsr, iu, ir):
         L1B = obsb.L[ir[i],0]
         L2B = obsb.L[ir[i],1]
         if L1R == 0.0 or L1B == 0.0 or L2R == 0 or L2B == 0:
-            #trace(3, 'gf: skip sat %d, L=0\n' % sat)
+            trace(4, 'gf: skip sat %d, L=0\n' % sat)
             continue
         freq0 = sat2freq(sat + 1, 0, nav)
         freq1 = sat2freq(sat + 1, 1, nav)
         gf1 = ((L1R - L1B) * _c / freq0 - (L2R - L2B) * _c / freq1)
+        if gf1 == 0:
+            continue
         gf0 = nav.gf[sat]    #retrieve previous gf
         nav.gf[sat] = gf1    # save current gf for next epoch
         if gf0 !=0.0 and abs(gf1 - gf0) > nav.thresslip:
@@ -953,10 +963,12 @@ def relpos(nav, obsr, obsb, sol):
                 nav.pt[1,sat-1,f] = obsr.t
                 nav.ph[1,sat-1,f] = obsr.L[iu[i],f]
     # save current LLI and fix status
-    nav.prev_lli[:,:], nav.slip[:,:] = 0, 0
+    nav.slip[:,:] = 0
     for f in range(nav.nf):
-        nav.prev_lli[obsb.sat-1,f,0] = obsb.lli[:,f]
-        nav.prev_lli[obsr.sat-1,f,1] = obsr.lli[:,f]
+        ix0 = np.where((obsb.L[:,f] != 0) | (obsb.lli[:,f] != 0))[0]
+        ix1 = np.where((obsr.L[:,f] != 0) | (obsr.lli[:,f] != 0))[0]
+        nav.prev_lli[obsb.sat[ix0]-1,f,0] = obsb.lli[ix0,f]
+        nav.prev_lli[obsr.sat[ix1]-1,f,1] = obsr.lli[ix1,f]
     if nav.armode > 0:
         nav.prev_fix = copy(nav.fix)
         # update lock counts for sats used in fix and disabled sats (lock < 0)

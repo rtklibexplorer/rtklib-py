@@ -17,6 +17,7 @@ maxage = 30              # mag age of differential, set to base sample rate for 
 maxout = 4               # maximum outage [epoch]
 thresdop = 5             # cycle slip detection by doppler method
 thresslip = 0.10         # cycle slip detection by geom-free LC
+interp_base = False       # interpret base observations
 
 # ------------  Kalman Filter Statistics ------------------------
 eratio = [300, 100]    # L1, L5
@@ -33,9 +34,10 @@ sig_n0 = 30.0            # inital bias sigma
 #  ---------------- Ambiguity resolution options ----------------
 armode = 0               # 0:off, 1:contunous,2:instantaneous,3:fix-and-hold
 thresar = 3              # AR threshold
-thresar1 = 0.05           # max pos variation for AR
+thresar1 = 0.05          # max pos variation for AR and accel into kalman update
 elmaskar = 15            # elevation mask for AR
 var_holdamb = 0.1
+mindropsats = 10
 
 # ----------- Single precision options ----------------------------
 sing_p0 = 100

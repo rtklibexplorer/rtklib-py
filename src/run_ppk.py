@@ -13,19 +13,18 @@ trace_level = 0  # debug trace level
 ######## specify input files ######################################
 
 # cellphone example
- datadir = r'C:\gps\python\rtklib-py\data\phone'
- navfile = 'nav_1350.nav'
- rovfile = 'Pixel4_GnssLog.obs'
- basefile = 'slac1350.obs'
- cfgfile = 'config_phone.py' # must be in src folder or absolute
-
+# datadir = r'C:\gps\python\rtklib-py\data\phone'
+# navfile = 'nav_1350.nav'
+# rovfile = 'Pixel4_GnssLog.obs'
+# basefile = 'slac1350.obs'
+# cfgfile = 'config_phone.py' # must be in src folder or absolute path
 
 # u-blox example
-# datadir = r'C:\gps\python\rtklib-py\data\u-blox'
-# navfile = 'rover.nav'
-# rovfile = 'rover.obs'
-# basefile = 'tmg23590.obs'
-# cfgfile = 'config_f9p.py'  # must be in src folder
+datadir = r'C:\gps\python\rtklib-py\data\u-blox'
+navfile = 'rover.nav'
+rovfile = 'rover.obs'
+basefile = 'tmg23590.obs'
+cfgfile = 'config_f9p.py'  # must be in src folder or absolute path
 
 ###################################################################
 

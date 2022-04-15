@@ -5,7 +5,7 @@ from rtkcmn import uGNSS, rSIG
 # ----------- PPK options -------------------------------
 nf = 2                   # num frequencies ( 1 or 2)
 pmode = 'kinematic'      # static, kinematic
-filtertype = 'backward'  # forward, backward, combined, combined_noreset
+filtertype = 'forward'  # forward, backward, combined, combined_noreset
 use_sing_pos = False     # run initial single precision sol each epoch, not
                          # necessary unless receiever clock errors are large
 elmin = 15
