@@ -68,8 +68,12 @@ def rtkinit(cfg):
     nav.thresar1 = cfg.thresar1
     nav.var_holdamb = cfg.var_holdamb
     nav.elmaskar = np.deg2rad(cfg.elmaskar)
+    nav.minfix = cfg.minfix
+    nav.minfixsats = cfg.minfixsats
+    nav.minholdsats = cfg.minholdsats
     nav.mindropsats = cfg.mindropsats
     nav.excsat_ix = 0
+    nav.nfix = 0
     
     # statistics
     nav.efact = cfg.efact
@@ -312,7 +316,6 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                 if not code:
                     nav.vsat[si,frq] = 1
                     nav.vsat[sj,frq] = 1
-                #trace(3,'sys=%d f=%d,i=%d,j=%d\n' % (sys,f,i,j))
                 trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f lock=%2d x=%13.3f\n" %
                       (sat[i], sat[j], 'LP'[code], frq+1, v[nv], Ri[nv], Rj[nv], nav.lock[sat[j]-1,frq],x[jj]))
                 nv += 1
@@ -444,8 +447,8 @@ def resamb_lambda(nav, sats):
     xa = np.zeros(na)
     ix = ddidx(nav, sats)
     nav.nb_ar = nb = len(ix)
-    if nb <= 0:
-        trace(3, 'resamb_lambda: no valid DD\n')
+    if nb <= nav.minfixsats - 1: # nb is sat pairs
+        trace(3, 'resamb_lambda: not enough valid double-differences DD\n')
         return -1, -1
 
     # y=D*xc, Qb=D*Qc*D', Qab=Qac*D'
@@ -522,7 +525,7 @@ def manage_amb_LAMBDA(nav, sats, stat, posvar):
            or (nav.ratio < nav.thresar * 1.1 and nav.ratio < nav.prev_ratio1 / 2.0)):
         trace(3, 'low ratio: check for new sat\n')
         dly = 2
-        ix = np.where((nav.fix == 2) & (nav.lock == 0))
+        ix = np.where((nav.fix >= 2) & (nav.lock == 0))
         for i,f in zip(ix[0],ix[1]):
             nav.lock[i,f] = -dly
             dly +=2
@@ -805,9 +808,9 @@ def selsat(nav, obsr, obsb, elb):
 
 def holdamb(nav, xa):
     """ hold integer ambiguity """
-    nb = nav.nx-nav.na
+    nb = nav.nx - nav.na
     v = np.zeros(nb)
-    H = np.zeros((nb, nav.nx))
+    H = np.zeros((nav.nx, nb))
     nv = 0
     for m in range(uGNSS.GNSSMAX):
         for f in range(nav.nf):
@@ -815,23 +818,28 @@ def holdamb(nav, xa):
             index = []
             for i in range(uGNSS.MAXSAT):
                 sys = nav.sysprn[i+1][0]
-                if sys != m or nav.fix[i, f] != 2:
+                if sys != m or nav.fix[i, f] < 2:
                     continue
                 index.append(IB(i+1, f, nav.na))
                 n += 1
                 nav.fix[i, f] = 3  # hold
-            # constraint to fixed ambiguity
+            # use ambiguity resolution results to generate a set of pseudo-innovations
+            #     to feed to kalman filter based on error between fixed and float solutions
             for i in range(1, n):
+                # phase-biases are single diff, so subtract errors to get
+                #     double diff: v(nv)=err(i)-err(0)
                 v[nv] = (xa[index[0]] - xa[index[i]]) - \
                     (nav.x[index[0]] - nav.x[index[i]])
-                H[nv, index[0]] = 1.0
-                H[nv, index[i]] = -1.0
+                H[index[0], nv] = 1.0
+                H[index[i], nv] = -1.0
                 nv += 1
-    if nv > 0:
-        R = np.eye(nv) * nav.var_holdamb
-        # update states with constraints
-        nav.x, nav.P, _ = gn.filter(nav.x, nav.P, H[0:nv, :], v[0:nv], R)
-    return 0
+    if nv < nav.minholdsats:
+        trace(3, 'holdamb: not enough sats to hold ambiguity\n')
+        return
+    trace(3, 'holdamb: hold on\n')
+    R = np.eye(nv) * nav.var_holdamb
+    # update states with constraints
+    nav.x, nav.P = gn.filter(nav.x, nav.P, H[:,:nv], v[:nv], R)
         
         
 def relpos(nav, obsr, obsb, sol):
@@ -932,7 +940,8 @@ def relpos(nav, obsr, obsb, sol):
             yu, eu, el = yu[iu, :], eu[iu, :], el[iu]
             v, H, R = ddres(nav, xa, nav.P, yr, er, yu, eu, sats, el, nav.dt, obsr)
             if valpos(nav, v, R):
-                if nav.armode == 3:
+                nav.nfix += 1
+                if nav.armode == 3 and nav.nfix >= nav.minfix:
                     holdamb(nav, xa)
                 stat = gn.SOLQ_FIX
         
@@ -946,6 +955,7 @@ def relpos(nav, obsr, obsb, sol):
             sol.rr = nav.x[0:6]
             sol.qr = nav.P[0:3,0:3]
             sol.qv = nav.P[3:6,3:6]
+            nav.nfix = 0
         sol.stat = stat
         sol.ratio = nav.ratio
         sol.age = nav.dt
@@ -973,7 +983,7 @@ def relpos(nav, obsr, obsb, sol):
         nav.prev_fix = copy(nav.fix)
         # update lock counts for sats used in fix and disabled sats (lock < 0)
         for f in range(nav.nf):
-            ix = np.where(((nav.nb_ar > 0) & (nav.fix[:,f] == 2)) | (nav.lock[:,f] < 0))[0]
+            ix = np.where(((nav.nb_ar > 0) & (nav.fix[:,f] >= 2)) | (nav.lock[:,f] < 0))[0]
             nav.lock[ix,f] += 1
 
             

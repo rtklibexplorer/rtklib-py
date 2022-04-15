@@ -37,6 +37,9 @@ thresar = 3              # AR threshold
 thresar1 = 0.05          # max pos variation for AR and accel into kalman update
 elmaskar = 15            # elevation mask for AR
 var_holdamb = 0.1
+minfix = 20
+minfixsats = 4
+minholdsats = 5
 mindropsats = 10
 
 # ----------- Single precision options ----------------------------

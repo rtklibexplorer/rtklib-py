@@ -281,7 +281,7 @@ def filter(x, P, H, v, R):
     *          double *H        I   transpose of design matrix (n x m)
     *          double *v        I   innovation (measurement - model) (m x 1)
     *          double *R        I   covariance matrix of measurement error (m x m)
-    *          int    n,m       I   number of states and measurements
+    *          int    n,m           number of states and measurements
     *          double *xp       O   states vector after update (n x 1)
     *          double *Pp       O   covariance matrix of states after update (n x n)"""
         

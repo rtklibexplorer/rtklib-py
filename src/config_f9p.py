@@ -32,11 +32,14 @@ sig_v0 = 10.0            # initial vel/acc sigma
 sig_n0 = 30.0            # inital bias sigma
 
 #  ---------------- Ambiguity resolution options ----------------
-armode = 1               # 0:off, 1:continuos,2:instantaneous,3:fix-and-hold
+armode = 3              # 0:off, 1:continuos,3:fix-and-hold
 thresar = 3              # AR threshold
 thresar1 = 0.1           # max pos variation for AR
 elmaskar = 15            # elevation mask for AR
 var_holdamb = 0.1
+minfix = 20           # min fix samples to set hold
+minfixsats = 4        # min sat pairs to test for fix
+minholdsats = 5       # min sat pairs to test for hold
 mindropsats = 10
 
 # ----------- Single precision options ----------------------------

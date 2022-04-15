@@ -8,7 +8,7 @@ import sys, os, shutil
 
 # set run parameters
 maxepoch = None # max # of epochs, used for debug, None = no limit
-trace_level = 0  # debug trace level
+trace_level = 3  # debug trace level
 
 ######## specify input files ######################################
 
