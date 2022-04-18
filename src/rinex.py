@@ -9,6 +9,7 @@ import numpy as np
 from copy import deepcopy
 from rtkcmn import uGNSS, rSIG, Eph, Geph, prn2sat, gpst2time, time2gpst, Obs, \
                     epoch2time, timediff, timeadd, utc2gpst
+import rtkcmn as gn
 from ephemeris import satposs
 
 class rnx_decode:
@@ -236,7 +237,6 @@ class rnx_decode:
 
         self.obslist = []
         nepoch = 0
-        nf = nav.nf
         for line in self.fobs:
             if line == '':
                 break
@@ -251,14 +251,14 @@ class rnx_decode:
             minute = int(line[16:18])
             sec = float(line[19:29])
             obs.t = epoch2time([year, month, day, hour, minute, sec])
-            obs.P = np.zeros((nsat, nf))
-            obs.L = np.zeros((nsat, nf))
-            obs.D = np.zeros((nsat, nf))
-            obs.S = np.zeros((nsat, nf))
-            obs.lli = np.zeros((nsat, nf), dtype=int)
-            obs.Pstd = np.zeros((nsat, nf), dtype=int)
-            obs.Lstd = np.zeros((nsat, nf), dtype=int)
-            obs.mag = np.zeros((nsat, nf))
+            obs.P = np.zeros((nsat, gn.MAX_NFREQ))
+            obs.L = np.zeros((nsat, gn.MAX_NFREQ))
+            obs.D = np.zeros((nsat, gn.MAX_NFREQ))
+            obs.S = np.zeros((nsat, gn.MAX_NFREQ))
+            obs.lli = np.zeros((nsat, gn.MAX_NFREQ), dtype=int)
+            obs.Pstd = np.zeros((nsat, gn.MAX_NFREQ), dtype=int)
+            obs.Lstd = np.zeros((nsat, gn.MAX_NFREQ), dtype=int)
+            obs.mag = np.zeros((nsat, gn.MAX_NFREQ))
             obs.sat = np.zeros(nsat, dtype=int)
             n = 0
             for k in range(nsat):

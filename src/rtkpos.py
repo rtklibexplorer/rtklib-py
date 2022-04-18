@@ -63,7 +63,7 @@ def rtkinit(cfg):
     
     # ambiguity resolution
     nav.armode = cfg.armode
-    nav.ratio = 0
+    nav.glo_hwbias = cfg.glo_hwbias
     nav.thresar = cfg.thresar
     nav.thresar1 = cfg.thresar1
     nav.var_holdamb = cfg.var_holdamb
@@ -74,6 +74,7 @@ def rtkinit(cfg):
     nav.mindropsats = cfg.mindropsats
     nav.excsat_ix = 0
     nav.nfix = 0
+    nav.ratio = 0
     
     # statistics
     nav.efact = cfg.efact
@@ -282,7 +283,8 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
             else:
                 i = i_el[0] # use highest sat if none without reset
             # calculate double differences of residuals (code/phase) for each sat
-            lami = _c / sat2freq(sat[i], frq, nav)
+            freqi = sat2freq(sat[i], frq, nav)
+            lami = _c / freqi
             for j in idx: # loop through sats
                 if i == j: continue  # skip ref sat
                 #  double-differenced measurements from 2 receivers and 2 sats in meters 
@@ -293,9 +295,15 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                 jj = IB(sat[j], frq, nav.na)
                 if not code:  # carrier phase
                     # adjust phase residual by double-differenced phase-bias term
-                    lamj = _c / sat2freq(sat[j], frq, nav)
+                    freqj = sat2freq(sat[j], frq, nav)
+                    lamj = _c / freqj
                     v[nv] -= lami * x[ii] - lamj * x[jj]
                     H[ii, nv], H[jj, nv] = lami, -lamj
+                    
+                # adjust double-difference for glonass hw bias
+                if sys == uGNSS.GLO and nav.glo_hwbias != 0:
+                    df = (freqi - freqj) / nav.dfreq_glo[frq]
+                    v[nv] -= df * nav.glo_hwbias
                 
                 # if residual too large, flag as outlier
                 thres = nav.maxinno
@@ -604,7 +612,7 @@ def detslp_gf(nav, obsb, obsr, iu, ir):
     """ detect cycle slip with geometry-free LC """
     
     # skip if check disabled
-    if nav.thresslip == 0:
+    if nav.thresslip == 0 or nav.nf < 2:
         return
     ns = len(iu)
     _c = rCST.CLIGHT

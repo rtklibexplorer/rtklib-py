@@ -31,6 +31,7 @@ nmf_aht = [2.53E-5, 5.49E-3, 1.14E-3] # height correction
 
 # global defines
 DTTOL = 0.025
+MAX_NFREQ = 2
 SOLQ_NONE = 0
 SOLQ_FIX = 1
 SOLQ_FLOAT = 2
