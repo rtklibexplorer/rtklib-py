@@ -5,7 +5,7 @@ from rtkcmn import uGNSS, rSIG
 # ----------- PPK options -------------------------------
 nf = 2                   # num frequencies ( 1 or 2)
 pmode = 'kinematic'      # static, kinematic
-filtertype = 'forward'  # forward, backward, combined, combined_noreset
+filtertype = 'forward'   # forward, backward, combined, combined_noreset
 use_sing_pos = False     # run initial single precision sol each epoch, not
                          # necessary unless receiever clock errors are large
 elmin = 15               # minimum elevation for float solution (degrees)
@@ -13,7 +13,7 @@ cnr_min = 24             # min signal strength (dB-Hz)
 excsats = []             # excluded sats
 
 maxinno = 1              # outlier threshold for phase (m)
-maxage = 30              # mag age of differential, set at base sample rate for now
+maxage = 30              # mag age of differential
 maxout = 4               # maximum outage [epoch]
 thresdop = 5             # cycle slip detection by doppler method
 thresslip = 0.10         # cycle slip detection by geom-free LC

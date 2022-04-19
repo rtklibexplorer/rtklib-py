@@ -324,52 +324,40 @@ def first_obs(nav, rov, base, dir):
     else: # backward solution
         rov.index = len(rov.obslist) - 1
         base.index = len(base.obslist) - 1
-    # sync base and rover, step in one obs to sync
+    # sync base and rover, step one obs to sync
     _, _ =next_obs(nav, rov, base, dir)
     # step back to first obs
     obsr, obsb = next_obs(nav, rov, base, -dir)
-    # save first base obs
-    #nav.obsb = deepcopy(obsb)
-    #nav.rsb, nav.varb, nav.dtsb, nav.svhb = satposs(obsb, nav)
     return obsr, obsb
 
 def next_obs(nav, rov, base, dir):
-    """ sync observation beteen rover and base """
-    if abs(dir) != 1:
-        return [], []
+    """ sync observations between rover and base """
     rov.index += dir   # 1=forward, -1=backward
-    flag = 0
+    if abs(dir) != 1 or rov.index < 0 or rov.index >= len(rov.obslist):
+        return [], []
+    obsr, obsb = rov.obslist[rov.index], base.obslist[base.index]
+    dt = timediff(obsr.t, obsb.t)
+    baseChange = False
+    ixb = base.index + dir
     while True:
-        if rov.index < 0 or rov.index >= len(rov.obslist) or \
-                base.index < 0 or base.index >= len(base.obslist):
-            return [], []
-        obsr = rov.obslist[rov.index]
-        obsb = base.obslist[base.index]
-        dt = timediff(obsr.t, obsb.t)
-        if -nav.maxage / 2 <= dt <= nav.maxage / 2:
-            break
-        if dt  > nav.maxage / 2: #nav.maxage:
-            if dir == 1:
-                base.index += 1
-                flag = 1
-            else:
-                rov.index -= 1
-        else: # dt < -nav.maxage/2
-            if dir == 1:
-                rov.index += 1
-            else:
-                base.index -= 1
-                flag = 1
-        if rov.index < 0 or rov.index > len(rov.obslist) - 1:
-            rov.index -= dir
-            break
-        if base.index < 0 or base.index > len(base.obslist) - 1:
-            base.index -= dir
-            break
-        if flag and nav.interp_base and len(nav.sol) > 0:
-            # save base residuals for next epoch
-            nav.obsb = deepcopy(obsb)
-            nav.rsb, nav.varb, nav.dtsb, nav.svhb = satposs(obsb, nav)
+        if ixb < 0 or ixb >= len(base.obslist):
+            ixb -= dir
+            dt_next = dt
+            break # hit end of obs list
+        dt_next = timediff(obsr.t, base.obslist[ixb].t)
+        if abs(dt_next) >= abs(dt):
+            break # next base obs is not closer
+        else:
+            base.index = ixb
+            ixb += dir
+            baseChange = True
+            dt = dt_next
+        
+    if baseChange and nav.interp_base and len(nav.sol) > 0:
+        # save base residuals for next epoch
+        nav.obsb = deepcopy(obsb)
+        nav.rsb, nav.varb, nav.dtsb, nav.svhb = satposs(obsb, nav)
+    obsb = base.obslist[base.index]
     return obsr, obsb
 
 def rcvstds(nav, obs):

@@ -13,7 +13,7 @@ cnr_min = 35             # min signal strength (dB-Hz)
 excsats = []             # excluded sats
 
 maxinno = 1              # outlier threshold for phase (m)
-maxage = 0.6*2           # mag age of differential, set at base sample rate for now
+maxage = 30              # mag age of differential
 maxout = 20              # maximum outage [epoch]
 thresdop = 6             # cycle slip detection by doppler method
 thresslip = 0.05         # cycle slip detection by geom-free LC
