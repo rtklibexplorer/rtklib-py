@@ -648,29 +648,36 @@ def detslp_ll(nav, obs, ix, rcv):
     # retrieve previous LLI
     LLI = nav.prev_lli[:,:,rcv]
     
-    ixsat = obs.sat[ix] - 1 
+    ixsat = obs.sat[ix] - 1
+    initP = (nav.sig_n0 / 2)**2 # init value for slips
+    slip = np.zeros_like(nav.slip)
     for f in range(nav.nf):
         ixL = np.where(obs.L[ix,f] != 0)[0]
         if nav.tt >= 0: # forward
-            nav.slip[ixsat[ixL],f] |= (obs.lli[ix[ixL],f] & 3)
+            slip[ixsat[ixL],f] |= (obs.lli[ix[ixL],f] & 3)
         else: # backward
-            nav.slip[ixsat[ixL],f] |= (LLI[ixsat[ixL],f] & 3)
+            slip[ixsat[ixL],f] |= (LLI[ixsat[ixL],f] & 3)
         
         # detect slip by parity unknown flag transition in LLI 
         hc_slip = np.where((obs.lli[ix[ixL],f] & 2) != 
                   (LLI[ixsat[ixL],f] & 2))[0]
         if len(hc_slip) > 0:
-            nav.slip[ixsat[ixL[hc_slip]],f] |= 1
+            slip[ixsat[ixL[hc_slip]],f] |= 1
         
-        # output results to trace
-        ixslip = np.where((nav.slip[ixsat[ixL],f] & 1) != 0)[0]
+
+        ixslip = np.where((slip[ixsat[ixL],f] & 1) != 0)[0]
         slipsats = ixsat[ixL[ixslip]] + 1
+        ib = IB(slipsats, f, nav.na)
+        for i in ib:
+            nav.P[i,i] = max(nav.P[i,i], initP)
+        # output results to trace
+
         if len(slipsats) > 0:
             trace(3, 'slip detected from LLI flags: f=%d, sats=%s\n' % (f, str(slipsats)))
-            trace(3, '   slip=%s\n' % str(nav.slip[ixsat[ixL[ixslip]], f]))
+            trace(3, '   slip=%s\n' % str(slip[ixsat[ixL[ixslip]], f]))
 
 
-def udpos(nav):
+def udpos(nav, sol):
     """ states propagation for kalman filter """
     tt = nav.tt
     trace(3, 'udpos : tt=%.3f\n' % tt)
@@ -683,7 +690,7 @@ def udpos(nav):
     if posvar > nav.sig_p0**2:
         #reset position with large variance
         for i in range(3):
-            initx(nav, nav.rr[i], nav.sig_p0**2, i)
+            initx(nav, sol.rr[i], nav.sig_p0**2, i)
             initx(nav, 0, nav.sig_v0**2, i + 3)
             initx(nav, 1e-6, nav.sig_v0**2, i + 6)
         trace(2, 'reset rtk position due to large variance: var=%.3f\n' % posvar)
@@ -788,12 +795,12 @@ def udbias(nav, obsb, obsr, iu, ir):
             trace(3,"     sat=%3d, F=%d: init phase=%.3f\n" % (sat[i],f+1, bias[i]))
 
 
-def udstate(nav, obsr, obsb, iu, ir):
+def udstate(nav, obsr, obsb, iu, ir, sol):
     """ temporal update of states """
     trace(3, 'udstate : ns=%d\n' % len(iu))
     # temporal update of position/velocity/acceleration
     tracemat(4, 'before udstate x=', nav.x[0:9])
-    udpos(nav) # updates nav.x and nav.P
+    udpos(nav, sol) # updates nav.x and nav.P
     tracemat(4, 'after udstate x=', nav.x[0:9])
     # temporal update of phase-bias
     udbias(nav, obsb, obsr, iu, ir) # updates outxnav.x and nav.P
@@ -889,7 +896,7 @@ def relpos(nav, obsr, obsb, sol):
         return
     
     # kalman filter time propagation
-    udstate(nav, obsr, obsb, iu, ir)
+    udstate(nav, obsr, obsb, iu, ir, sol)
 
     # undifferenced residuals for rover
     trace(3, 'rover: dt=%.3f\n' % nav.dt)
@@ -953,23 +960,22 @@ def relpos(nav, obsr, obsb, sol):
                     holdamb(nav, xa)
                 stat = gn.SOLQ_FIX
         
-    # save solution unless none
-    if stat != gn.SOLQ_NONE:
-        if stat == gn.SOLQ_FIX: 
-            sol.rr = nav.xa[0:6]
-            sol.qr = nav.Pa[0:3,0:3]
-            sol.qv = nav.Pa[3:6,3:6]
-        else: # SOLQ_FLOAT
-            sol.rr = nav.x[0:6]
-            sol.qr = nav.P[0:3,0:3]
-            sol.qv = nav.P[3:6,3:6]
-            nav.nfix = 0
-        sol.stat = stat
-        sol.ratio = nav.ratio
-        sol.age = nav.dt
-        nav.sol.append(sol)
-        nav.rr = sol.rr[0:3]
-        tracemat(3, 'sol_rr= ', sol.rr, '15.3f')
+    # save solution
+    if stat == gn.SOLQ_FIX: 
+        sol.rr = nav.xa[0:6]
+        sol.qr = nav.Pa[0:3,0:3]
+        sol.qv = nav.Pa[3:6,3:6]
+    else: # SOLQ_FLOAT
+        sol.rr = nav.x[0:6]
+        sol.qr = nav.P[0:3,0:3]
+        sol.qv = nav.P[3:6,3:6]
+        nav.nfix = 0
+    sol.stat = stat
+    sol.ratio = nav.ratio
+    sol.age = nav.dt
+    nav.sol.append(sol)
+    nav.rr = sol.rr[0:3]
+    tracemat(3, 'sol_rr= ', sol.rr, '15.3f')
                 
     # save phases and times for cycle slip detection
     for i, sat in enumerate(sats):
@@ -999,6 +1005,7 @@ def rtkpos(nav, rov, base, dir):
     """ relative positioning for PPK """
     trace(3, 'rtkpos: start solution, dir=%d\n' % dir)
     n = 0
+    sol = gn.Sol()
     # loop through all epochs
     while True:
         if n== 0:
@@ -1021,7 +1028,7 @@ def rtkpos(nav, rov, base, dir):
         if obsr == []:
             break
         # single precision solution, used to update solution time
-        if nav.use_sing_pos:
+        if nav.use_sing_pos or sol.stat == gn.SOLQ_NONE or sol.rr[0] == 0.0:
             sol = pntpos(obsr, nav)
         else:
             sol = gn.Sol()
