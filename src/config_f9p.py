@@ -34,6 +34,7 @@ sig_n0 = 30.0            # inital bias sigma (m)
 #  -------------Ambiguity resolution options ----------------
 armode = 3               # 0:off, 1:continuos,3:fix-and-hold
 thresar = 3              # AR threshold
+minlock = 0              # min consecutive fix samples to include sat in AR 
 glo_hwbias = 0.0         # GLONASS HW bias
 thresar1 = 0.1           # max pos variation for AR (and accel update in kalman filter)
 elmaskar = 15            # elevation mask for AR

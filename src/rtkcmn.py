@@ -615,13 +615,22 @@ def ecef2enu(pos, r):
     return e
 
 def covenu(llh, P):
-    """transform covariance to local tangental coordinate --------------------------
+    """transform ecef covariance to local tangental coordinate --------------------------
     * transform ecef covariance to local tangental coordinate
     * args   : llh      I   geodetic position {lat,lon} (rad)
     *          P        I   covariance in ecef coordinate
     *          Q        O   covariance in local tangental coordinate """
     E = xyz2enu(llh)
     return E @ P @ E.T
+
+def covecef(llh, Q):
+    """transform local enu coordinate covariance to xyz-ecef  --------------------------
+    * transform ecef covariance to local tangental coordinate
+    * args   : llh      I   geodetic position {lat,lon} (rad)
+    *          Q        I   covariance in local tangental coordinate
+    *          P        O   covariance in ecef coordinate """
+    E = xyz2enu(llh)
+    return E.T @ Q @ E
 
 def deg2dms(deg):
     """ convert from deg to dms """
