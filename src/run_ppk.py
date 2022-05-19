@@ -20,14 +20,6 @@ basepos = []  # default to not specified here
 # basefile = 'slac1350.obs'
 # cfgfile = 'config_phone.py' # must be in src folder or absolute path
 
-# Google Smartphone Decimeter Challenge example
-#datadir = r'C:\gps\data\cellphone\Google\2022\train\2021-12-08-US-LAX-1'
-#navfile = 'AC0300USA_R_20213420000_01D_MN.rnx'
-#rovfile = r'C:\gps\data\cellphone\Google\2022\train\2021-12-08-US-LAX-1\GooglePixel6Pro\supplemental\gnss_log.obs'
-#basefile = 'base.obs'
-#cfgfile = r'C:\gps\data\cellphone\Google\2022\train\config_phone_0401.py' # must be in src folder or absolute path
-#basepos = [-2497836.5139, -4654543.2609, 3563028.9379] # LAX
-
 # u-blox example
 datadir = r'C:\gps\python\rtklib-py\data\u-blox'
 navfile = 'rover.nav'
