@@ -948,7 +948,7 @@ def relpos(nav, obsr, obsb, sol):
             nav.ns = len(ix)
             
     # resolve integer ambiguities
-    if nav.armode > 0:
+    if nav.armode > 0 and stat != gn.SOLQ_NONE:
         nb, xa = manage_amb_LAMBDA(nav, sats, stat, posvar)
         if nb > 0:
             yu, eu, el = zdres(nav, obsr, rs, dts, svh, var, xa[0:3], 1)

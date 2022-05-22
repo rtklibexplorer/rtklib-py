@@ -281,9 +281,16 @@ class rnx_decode:
                     obs_ = line[16*i+4:16*i+17].strip()
                     if obs_ == '' or self.sigid[sys][i] == 0:
                         continue
+                    try:
+                        obsval = float(obs_)
+                    except:
+                        obsval = 0
                     f = i // (self.nsig[sys] // self.nband[sys])
+                    if f >= gn.MAX_NFREQ:
+                        print('Obs file too complex, please use RTKCONV to remove unused signals')
+                        raise SystemExit
                     if self.typeid[sys][i] == 0:  # code
-                        obs.P[n, f] = float(obs_)
+                        obs.P[n, f] = obsval
                         Pstd = line[16*i+18]
                         obs.Pstd[n, f] = int(Pstd) if Pstd != " " else 0
                     elif self.typeid[sys][i] == 1:  # carrier
@@ -293,9 +300,9 @@ class rnx_decode:
                         Lstd = line[16*i+18]
                         obs.Lstd[n, f] = int(Lstd) if Lstd != " " else 0
                     elif self.typeid[sys][i] == 2:  # C/No
-                        obs.S[n, f] = float(obs_)
+                        obs.S[n, f] = obsval
                     elif self.typeid[sys][i] == 3:  # Doppler
-                            obs.D[n, f] = float(obs_)
+                            obs.D[n, f] = obsval
                 n += 1
             obs.P = obs.P[:n, :]
             obs.L = obs.L[:n, :]
