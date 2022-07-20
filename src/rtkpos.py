@@ -701,7 +701,7 @@ def udpos(nav, sol):
     F[0:6, 3:9] += np.eye(6) * tt
     # include accel terms if filter is converged
     if posvar < nav.thresar1:
-        F[3:6, 6:9] += np.eye(3) * tt**2 / 2
+        F[0:3, 6:9] += np.eye(3) * tt**2 / 2
     else:
         trace(3, 'pos var too high for accel term: %.4f\n' % posvar)
     # x=F*x, P=F*P*F
