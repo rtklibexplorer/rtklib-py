@@ -20,12 +20,22 @@ basepos = []  # default to not specified here
 # basefile = 'slac1350.obs'
 # cfgfile = 'config_phone.py' # must be in src folder or absolute path
 
+# Google Smartphone Decimeter Challenge example
+datadir = r'C:\gps\GSDC_2022\data\train\2021-12-08-US-LAX-3\GooglePixel5'
+navfile = '../BRDM00DLR_S_20213420000_01D_MN.rnx'
+rovfile = r'C:\gps\GSDC_2022\data\train\2021-12-08-US-LAX-3\GooglePixel5\supplemental\gnss_log.obs'
+basefile = '../base.obs'
+cfgfile = r'C:\gps\GSDC_2022\config\ppk_phone_0625.py' # must be in src folder or absolute path
+basepos = [-2497836.8748, -4654543.0665, 3563029.0635] # VDCY
+#basepos = [-2703116.3527, -4291766.8501, 3854248.1361] # SLAC
+#basepos = [-2689640.5799, -4290437.1653, 3865051.0923] #P222
+
 # u-blox example
-datadir = r'C:\gps\python\rtklib-py\data\u-blox'
-navfile = 'rover.nav'
-rovfile = 'rover.obs'
-basefile = 'tmg23590.obs'
-cfgfile = 'config_f9p.py'  # must be in src folder or absolute path
+# datadir = r'C:\gps\python\rtklib-py\data\u-blox'
+# navfile = 'rover.nav'
+# rovfile = 'rover.obs'
+# basefile = 'tmg23590.obs'
+# cfgfile = 'config_f9p.py'  # must be in src folder or absolute path
 
 ###################################################################
 

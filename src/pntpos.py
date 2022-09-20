@@ -90,7 +90,7 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
             continue
         if iter > 0:
             # test CNR
-            if obs.S[i,[0]] < nav.cnr_min:
+            if obs.S[i,[0]] < nav.cnr_min[0]:
                 continue
             # ionospheric correction
             dion = ionmodel(obs.t, pos, az, el, nav.ion)

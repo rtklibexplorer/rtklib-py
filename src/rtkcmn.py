@@ -35,6 +35,7 @@ MAX_NFREQ = 2
 SOLQ_NONE = 0
 SOLQ_FIX = 1
 SOLQ_FLOAT = 2
+SOLQ_DGPS = 4
 SOLQ_SINGLE = 5
 
 MAX_VAR_EPH = 300**2 # max variance eph to reject satellite
@@ -561,7 +562,9 @@ def dops(az, el, elmin=0):
 
 
 def xyz2enu(pos):
-    """ return ECEF to ENU conversion matrix from LLH """
+    """ return ECEF to ENU conversion matrix from LLH 
+        pos is LLH
+    """
     sp = sin(pos[0])
     cp = cos(pos[0])
     sl = sin(pos[1])
@@ -609,7 +612,7 @@ def pos2ecef(pos, isdeg: bool = False):
 
 
 def ecef2enu(pos, r):
-    """ releative ECEF to ENU conversion """
+    """ relative ECEF to ENU conversion """
     E = xyz2enu(pos)
     e = E @ r
     return e
