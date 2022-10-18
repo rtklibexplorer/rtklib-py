@@ -9,10 +9,11 @@ filtertype = 'forward'   # forward, backward, combined, combined_noreset
 use_sing_pos = False     # run initial single precision sol each epoch, not
                          # necessary unless receiever clock errors are large
 elmin = 15               # minimum elevation for float solution (degrees)
-cnr_min = 24             # min signal strength (dB-Hz)
+cnr_min = [28, 20]   # min signal strength [freq1, freq2] (dB-Hz)
 excsats = []             # excluded sats
 
 maxinno = 1              # outlier threshold for phase (m)
+maxcode = 10             # outlier threshold for code (m)
 maxage = 30              # mag age of differential
 maxout = 4               # maximum outage [epoch]
 thresdop = 5             # cycle slip detection by doppler method
@@ -22,8 +23,8 @@ interp_base = False      # interpolate base observations
 # ------------  Kalman Filter Statistics ------------------------
 eratio = [300, 100]    # ratio between psuedorange noise and carrier phase noise for L1, L5
 efact = {uGNSS.GPS: 1.0, uGNSS.GLO: 1.5, uGNSS.GAL: 1.0} # relative weighting of each constellation
-err = [0, 0.003, 0.003, 0.0, 0, 5e-12]  # err sigmas [-, base, el, rcvstd, bl, satclk]
-
+err = [0, 0.003, 0.003, 0.0, 0, 0, 5e-12]  # err sigmas [-, base, el, bl, snr, rcvstd, satclk]
+snrmax = 45              # max signal strength for variance calc (dB-Hz)
 accelh = 3               # horiz accel noise sigma (m/sec2)
 accelv = 1               # vert accel noise sigma (m/sec2)
 prnbias = 1e-2           # Carrier phase bias sigma ( cycles)
@@ -52,7 +53,8 @@ sing_elmin = 10          # minimum elevation (degrees)
 
 # -------------  Base and Rover positions ------------------
 # base position, set to zeros to use rinex header pos
-rb = [-2703115.9211, -4291767.2078, 3854247.9065]
+#rb = [-2703115.9211, -4291767.2078, 3854247.9065] # SLAC
+rb = [0, 0, 0]  # will set based on base file name
 
 # initial rover position/velocity for alignment to RTKLIB
 #rr_f = [-2694556.682853,  -4296492.691977,   3854819.048563, # forwards

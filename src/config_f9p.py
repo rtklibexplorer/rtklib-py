@@ -9,10 +9,11 @@ filtertype = 'forward'   # forward, backward, combined, combined_noreset
 use_sing_pos = False     # run initial single precision sol each epoch, not
                          # necessary unless receiever clock errors are large
 elmin = 15               # minimum elevation for float solution (degrees)
-cnr_min = 35             # min signal strength (dB-Hz)
+cnr_min = [35, 35]       # min signal strength [freq1, freq2] (dB-Hz)
 excsats = []             # excluded sats
 
 maxinno = 1              # outlier threshold for phase (m)
+maxcode = 10             # outlier threshold for code (m)
 maxage = 30              # mag age of differential
 maxout = 20              # maximum outage [epoch]
 thresdop = 6             # cycle slip detection by doppler method
@@ -22,8 +23,8 @@ interp_base = False      # interpolate base observations
 # ------------  Kalman Filter Statistics ------------------------
 eratio = [300, 300]      # ratio between psuedorange noise and carrier phase noise for L1, L2
 efact = {uGNSS.GPS: 1.0, uGNSS.GLO: 1.5, uGNSS.GAL: 1.0} # relative weighting of each constellation
-err = [0, 0.003, 0.003, 0.0, 0, 5e-12]  # error sigmas [-, base, el, rcvstd, bl, satclk]
-
+err = [0, 0.003, 0.003, 0.0, 0, 0, 5e-12]  # error sigmas [-, base, el, bl, snr, rcvstd, satclk]
+snrmax = 52              # max signal strength for variance calc (dB-Hz)
 accelh = 3               # horiz accel noise sigma (m/sec2)
 accelv = 1               # vert accel noise sigma (m/sec2)
 prnbias = 1e-4           # Carrier phase bias sigma ( cycles)

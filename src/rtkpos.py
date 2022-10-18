@@ -17,7 +17,7 @@ from ephemeris import satposs
 from mlambda import mlambda
 from rtkcmn import trace, tracemat, uGNSS
 import __ppk_config as cfg
-#rom ppp import tidedisp
+
 
 MAX_VAR_EPH = 300**2
 
@@ -38,6 +38,8 @@ def rtkinit(cfg):
     nav.gf = np.zeros(uGNSS.MAXSAT)
     nav.ph = np.zeros((2, uGNSS.MAXSAT, nav.nf))
     nav.pt = np.empty((2, uGNSS.MAXSAT, nav.nf), dtype=object)
+    nav.SNR_rover = np.zeros((uGNSS.MAXSAT, nav.nf))
+    nav.SNR_base = np.zeros((uGNSS.MAXSAT, nav.nf))
     nav.nfix = nav.neb = nav.tt = 0
     
     nav.rb = cfg.rb
@@ -53,7 +55,7 @@ def rtkinit(cfg):
     nav.dfreq_glo = cfg.dfreq_glo
     nav.interp_base = cfg.interp_base
     nav.gnss_t = cfg.gnss_t
-    nav.maxinno = cfg.maxinno
+    nav.maxinno = [cfg.maxinno, cfg.maxcode]
     nav.thresdop = cfg.thresdop
     nav.thresslip = cfg.thresslip
     nav.maxage = cfg.maxage
@@ -79,7 +81,8 @@ def rtkinit(cfg):
     # statistics
     nav.efact = cfg.efact
     nav.eratio = cfg.eratio
-    nav.err = np.array(cfg.err) 
+    nav.err = np.array(cfg.err)
+    nav.snrmax = cfg.snrmax
     nav.sig_p0 = cfg.sig_p0
     nav.sig_v0 = cfg.sig_v0
     nav.sig_n0 = cfg.sig_n0
@@ -111,7 +114,7 @@ def zdres_sat(nav, obs, r, rtype, dant, ix):
     y = np.zeros(nf * 2)
     for f in range(nf):
         freq = sat2freq(obs.sat[ix], f, nav)
-        if obs.S[ix,f] < nav.cnr_min:
+        if obs.S[ix,f] < nav.cnr_min[f]:
             continue
         # residuals = observable - estimated range (phase and code)
         y[f] = obs.L[ix,f] * _c / freq - r - dant[f] if obs.L[ix,f] else 0
@@ -215,23 +218,30 @@ def IB(s, f, na=3):
     return na + uGNSS.MAXSAT * f + s - 1
 
 
-def varerr(nav, sys, el, f, dt, rcvstd):
+def varerr(nav, sys, el, f, dt, rcvstd, snr_rover, snr_base):
     """ variation of measurement """
     code = 1 * (f >= nav.nf) # 0 = phase, 1 = code
     freq = f % nav.nf
-    s_el = np.sin(el)
-    if s_el <= 0.0: 
-        return 0.0
-    fact = nav.eratio[freq] if code else 1
+    sinel = np.sin(el)
+    if code:    # increase variance for pseudoranges
+        fact = nav.eratio[freq]
+    else:     # adjust phase variance between freqs
+        fact = nav.eratio[freq] / nav.eratio[0]
+    # adjust variances for constellation
     fact *= nav.efact[sys]
+    # adjust variance for config parameters
     a, b = fact * nav.err[1:3]
-    c = fact * 0  # nav.err[4]*bl/1E4  # TODO: add baseline term
-    d = rCST.CLIGHT * nav.err[5] * dt # clock term
-    var = 2.0 * (a**2 + (b / s_el)**2 + c**2) + d**2
-    # TODO: add SNR term
-    # add scaled stdevs from receiver
-    if nav.err[3] > 0:
-        var += (nav.err[3] * rcvstd)**2
+    c = fact * 0  # nav.err[3]*bl/1E4  # TODO: add baseline term
+    d = rCST.CLIGHT * nav.err[6] * dt # clock term
+    var = 2.0 * (a**2 + (b / sinel)**2 + c**2) + d**2
+
+    if nav.err[4] > 0: # add SNR term
+        e = fact * nav.err[4]
+        var += e**2 * (10**(0.1 * max(nav.snrmax - snr_rover, 0)) +
+                      10**(0.1 * max(nav.snrmax - snr_base, 0)))
+
+    if nav.err[5] > 0: # add receiver error term
+        var += (nav.err[5] * rcvstd)**2
     return var
 
 
@@ -278,9 +288,9 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
             for i in i_el[::-1]:
                 ii = IB(sat[i], frq, nav.na)
                 # check if sat just reset
-                if  P[ii,ii] != nav.sig_n0**2: 
+                if  P[ii,ii] <= nav.sig_n0**2: 
                     break
-            else:
+            else: # check if none without reset
                 i = i_el[0] # use highest sat if none without reset
             # calculate double differences of residuals (code/phase) for each sat
             freqi = sat2freq(sat[i], frq, nav)
@@ -305,12 +315,10 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                     df = (freqi - freqj) / nav.dfreq_glo[frq]
                     v[nv] -= df * nav.glo_hwbias
                 
+                # use larger outlier thresh if just initialized phase
+                thresadj = 10 if (P[ii,ii] >= P_init or P[jj,jj] >= P_init) else 1
                 # if residual too large, flag as outlier
-                thres = nav.maxinno
-                # use larger thresh for code or just initialized phase
-                if code or P[ii,ii] == P_init or P[jj,jj] == P_init:
-                    thres *= nav.eratio[frq] 
-                if abs(v[nv]) > thres:
+                if abs(v[nv]) > nav.maxinno[code] * thresadj:
                     nav.vsat[sat[j]-1,frq] = 0
                     nav.rejc[sat[j]-1,frq] += 1
                     trace(3,"outlier rejected: (sat=%3d-%3d %s%d v=%13.3f x=%13.3f %13.3f P=%.6f %.6f)\n" 
@@ -319,16 +327,35 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                     continue 
                 # single-differenced measurement error variances (m)
                 si, sj = sat[i] - 1, sat[j] - 1
-                Ri[nv] = varerr(nav, sys, el[i], f, dt, nav.rcvstd[si,f])
-                Rj[nv] = varerr(nav, sys, el[j], f, dt, nav.rcvstd[sj,f])
+                Ri[nv] = varerr(nav, sys, el[i], f, dt, nav.rcvstd[si,f], 
+                        nav.SNR_rover[si,frq], nav.SNR_base[si,frq])
+                Rj[nv] = varerr(nav, sys, el[j], f, dt, nav.rcvstd[sj,f],
+                        nav.SNR_rover[sj,frq], nav.SNR_base[sj,frq])
                 if not code:
-                    nav.vsat[si,frq] = 1
-                    nav.vsat[sj,frq] = 1
-                trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f lock=%2d x=%13.3f\n" %
-                      (sat[i], sat[j], 'LP'[code], frq+1, v[nv], Ri[nv], Rj[nv], nav.lock[sat[j]-1,frq],x[jj]))
+                    # set valid data flags
+                    nav.vsat[si,frq] = nav.vsat[sj,frq] = 1
+                trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f lock=%2d x=%13.3f P=%.3f\n" %
+                      (sat[i], sat[j], 'LP'[code], frq+1, v[nv], Ri[nv], Rj[nv],
+                       nav.lock[sat[j]-1,frq], x[jj], P[jj,jj]))
                 nv += 1
                 nb[b] += 1
             b += 1
+            
+
+    # add constraint for fixed solution
+    # find matching timestamp in ground truth data
+    # t = round((obsr.t.time + obsr.t.sec + gn.leaps(0)) * 10)
+    # ix = np.where(nav.ground_truth[:,0] == t)[0][0]
+    # pos_truth = gn.pos2ecef(nav.ground_truth[ix,1:4], isdeg=True)
+    # pos_err = x[0:3] - pos_truth
+    # v[nv] = norm(pos_err)
+    # H[0:3, nv] = -pos_err / norm(pos_err)
+    # Ri[nv] = 0
+    # Rj[nv] = 1e-4
+    # nv += 1
+    # nb[b] +=1
+    # b+=1
+                            
     R = ddcov(nb, b, Ri[:nv], Rj[:nv], nv)
 
     return v[:nv], H[:,:nv], R
@@ -737,17 +764,17 @@ def udbias(nav, obsb, obsr, iu, ir):
     nav.outc += 1
     for f in range(nav.nf):
         for i in range(uGNSS.MAXSAT):
-            j = IB(i+1, f, nav.na)
-            if nav.outc[i,f] > nav.maxout and nav.x[j] != 0.0:
+            ii = IB(i+1, f, nav.na)
+            if nav.outc[i,f] > nav.maxout and nav.x[ii] != 0.0:
                 trace(3, '  obs outage counter overflow ( sat=%d L%d: n=%d\n' 
                       % (i+1, f+1, nav.outc[i,f]))
-                initx(nav, 0, 0, j)
+                initx(nav, 0, 0, ii)
             # TODO: set AR minlock
         # update phase bias noise and check for cycle slips and outliers
         for i in range(ns):
             j = IB(sat[i], f, nav.na)
             nav.P[j,j] += nav.prnbias**2 * abs(nav.tt)
-            if (nav.slip[sat[i]-1,f] & 1) or nav.rejc[sat[i]-1,f] >= 2:
+            if (nav.slip[sat[i]-1,f] & 1) or nav.rejc[sat[i]-1,f] > 1:
                 trace(4, 'flag phase for reset: sat=%d f=%d slip=%d rejc=%d\n' % 
                       (sat[i], f, nav.slip[sat[i]-1,f], nav.rejc[sat[i]-1,f]))
                 initx(nav, 0, 0, j)
@@ -782,14 +809,15 @@ def udbias(nav, obsb, obsr, iu, ir):
         ix = np.where(nav.x[ib1:] != 0)[0]
         nav.x[ix+ib1] += offset
         
-        # set initial states of phase-bias
+        # find sats that need to be reset
         for i in range(ns):
             j = IB(sat[i], f, nav.na)
             if bias[i] == 0.0 or nav.x[j] != 0.0:
                 continue
+            # set initial states of phase-bias
             freq = sat2freq(sat[i], f, nav)
             initx(nav, bias[i], nav.sig_n0**2, j)
-            nav.outc[sat[i]-1,f] = 0
+            nav.outc[sat[i]-1,f] = 1
             nav.rejc[sat[i]-1,f] = 0
             nav.lock[sat[i]-1,f] = 0
             trace(3,"     sat=%3d, F=%d: init phase=%.3f\n" % (sat[i],f+1, bias[i]))
@@ -897,6 +925,11 @@ def relpos(nav, obsr, obsb, sol):
     
     # kalman filter time propagation
     udstate(nav, obsr, obsb, iu, ir, sol)
+    
+    # save SNR values
+    for f in range(nav.nf):
+        nav.SNR_rover[obsr.sat[iu]-1,f] = obsr.S[iu,f]
+        nav.SNR_base[obsb.sat[ir]-1,f] = obsb.S[ir,f]
 
     # undifferenced residuals for rover
     trace(3, 'rover: dt=%.3f\n' % nav.dt)
@@ -910,7 +943,7 @@ def relpos(nav, obsr, obsb, sol):
     sats = obsr.sat[iu]
     els = nav.el[sats-1] = el[iu]
     
-    # double differenced residuals
+    # calculate double-differenced residuals and create state matrix from sat angles 
     v, H, R = ddres(nav, nav.x, nav.P, yr, er, yu, eu, sats, els, nav.dt, obsr)
     
     if len(v) < 4:
@@ -920,52 +953,58 @@ def relpos(nav, obsr, obsb, sol):
         stat = gn.SOLQ_FLOAT
     
     if stat != gn.SOLQ_NONE:
-        # kalman filter measurement update
+        # kalman filter measurement update, updates x,y,z,sat phase biases, etc
         tracemat(3, 'before filter x=', nav.x[0:9])
         xp, Pp = gn.filter(nav.x, nav.P, H, v, R)
         tracemat(3, 'after filter x=', xp[0:9])
         posvar = np.sum(np.diag(Pp[0:3])) / 3
         trace(3,"posvar=%.6f \n" % posvar)
 
-        # check validity of solution 
-        # non-differencial residual for rover after measurement update
+        # calc zero diff residuals again after kalman filter update
         yu, eu, _ = zdres(nav, obsr, rs, dts, svh, var, xp[0:3], 1)
         yu, eu = yu[iu,:], eu[iu,:]
-        # residual for float solution
+        # calc double diff residuals again after kalman filter update for float solution 
         v, H, R = ddres(nav, xp, Pp, yr, er, yu, eu, sats, els, nav.dt, obsr)
         # validation of float solution, always returns 1, msg to trace file if large residual
         valpos(nav, v, R)
         
-        # save results of kalman filter update
+        # update state and covariance matrix from kalman filter update
         nav.x = xp.copy()
         nav.P = Pp.copy()
         
-    # update sat status
-    for f in range(nav.nf):
-        ix = np.where(nav.vsat[:,f] > 0)[0]
-        nav.outc[ix,f] = 0
-        if f == 0:
-            nav.ns = len(ix)
+        # update valid satellite status for ambiguity control
+        for f in range(nav.nf):
+            ix = np.where(nav.vsat[:,f] > 0)[0]
+            nav.outc[ix,f] = 0
+            if f == 0:
+                nav.ns = len(ix) # valid satellite count by L1
+        # check for too few valid phases
+        if nav.ns < 4:
+            stat = gn.SOLQ_DGPS;
             
-    # resolve integer ambiguities
-    if nav.armode > 0 and stat != gn.SOLQ_NONE:
+    # resolve integer ambiguity by LAMBDA 
+    if nav.armode > 0 and stat == gn.SOLQ_FLOAT:
+        # if valid fixed solution, process it
         nb, xa = manage_amb_LAMBDA(nav, sats, stat, posvar)
         if nb > 0:
+            # find zero-diff residuals for fixed solution 
             yu, eu, el = zdres(nav, obsr, rs, dts, svh, var, xa[0:3], 1)
             yu, eu, el = yu[iu, :], eu[iu, :], el[iu]
+            # post-fit residuals for fixed solution (xa includes fixed phase biases, rtk->xa does not) 
             v, H, R = ddres(nav, xa, nav.P, yr, er, yu, eu, sats, el, nav.dt, obsr)
+            # validation of fixed solution, always returns valid
             if valpos(nav, v, R):
                 nav.nfix += 1
                 if nav.armode == 3 and nav.nfix >= nav.minfix:
                     holdamb(nav, xa)
                 stat = gn.SOLQ_FIX
         
-    # save solution
+    # save solution status (fixed or float)
     if stat == gn.SOLQ_FIX: 
         sol.rr = nav.xa[0:6]
         sol.qr = nav.Pa[0:3,0:3]
         sol.qv = nav.Pa[3:6,3:6]
-    else: # SOLQ_FLOAT
+    else: # SOLQ_FLOAT or SOLQ_DGPS
         sol.rr = nav.x[0:6]
         sol.qr = nav.P[0:3,0:3]
         sol.qv = nav.P[3:6,3:6]
