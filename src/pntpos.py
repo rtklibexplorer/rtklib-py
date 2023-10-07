@@ -85,7 +85,7 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
         r, e = geodist(rs[i], rr)
         if r < 0:
             continue
-        az, el = satazel(pos, e)
+        [az, el] = satazel(pos, e)
         if el < nav.elmin:
             continue
         if iter > 0:

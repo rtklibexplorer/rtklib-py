@@ -13,7 +13,7 @@ basepos = []  # default to not specified here
 
 ######## specify input files ######################################
 
-# cellphone example
+# cell phone example from 2021 Google Smartphone Decimeter Challenge
 # datadir = r'C:\gps\python\rtklib-py\data\phone'
 # navfile = 'nav_1350.nav'
 # rovfile = 'Pixel4_GnssLog.obs'
@@ -21,7 +21,7 @@ basepos = []  # default to not specified here
 # cfgfile = 'config_phone.py' # must be in src folder or absolute path
 
 # u-blox example
-datadir = r'C:\gps\python\rtklib-py\data\u-blox'
+datadir = '../data/u-blox'
 navfile = 'rover.nav'
 rovfile = 'rover.obs'
 basefile = 'tmg23590.obs'
@@ -41,6 +41,8 @@ from postpos import procpos, savesol
 
 # generate output file names
 solfile = rovfile[:-4] + '.pos'
+statfile = os.path.join(datadir, rovfile[:-4] + '.pos.stat')
+fp_stat = open(statfile, 'w')
 if trace_level > 0:
     trcfile = os.path.join(datadir, rovfile[:-4] + '.trace')
     sys.stderr = open(trcfile, "w")
@@ -77,12 +79,8 @@ rov.decode_nav(navfile, nav)
 
 # calculate solution
 print('Calculating solution ...\n')
-sol = procpos(nav, rov, base)
+sol = procpos(nav, rov, base, fp_stat)
 
 # save solution to file
 savesol(sol, solfile)
-
-
-
-
-
+fp_stat.close()

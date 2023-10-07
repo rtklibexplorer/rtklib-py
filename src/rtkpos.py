@@ -21,6 +21,34 @@ import __ppk_config as cfg
 
 MAX_VAR_EPH = 300**2
 
+def outsolstat(nav, sol, fp_stat):
+    week, tow = gn.time2gpst(sol.t)
+    
+    # save position to file    
+    fp_stat.write('$POS,%d,%.3f,%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n' % 
+            (week, tow, sol.stat, sol.rr[0], sol.rr[1], sol.rr[2], 0.0, 0.0, 0.0))
+    
+    # save velocity to file
+    pos = gn.ecef2pos(sol.rr)
+    vel = gn.ecef2enu(pos, nav.x[3:6])
+    fp_stat.write('$VELACC,%d,%.3f,%d,%.4f,%.4f,%.4f,%.5f,%.5f,%.5f,%.4f,%.4f,%.4f,%.5f,%.5f,%.5f\n' %
+                (week, tow, sol.stat, vel[0], vel[1], vel[2], 0, 0, 0, 0, 0, 0, 0, 0, 0))
+
+    # save residuals to file    
+    for i in range(uGNSS.MAXSAT):
+        if nav.vsat[i,0] == 0: 
+            continue
+        id = gn.sat2id(i+1)
+        for f in range(nav.nf):
+            k = IB(i+1, f, nav.na)
+            fp_stat.write('$SAT,%d,%.3f,%s,%d,%.1f,%.1f,%.4f,%.4f,%d,%.0f,%d,%d,%d,%d,%d,%d,%.2f,%.6f\n' %
+                    (week, tow, id
+                     , f+1, np.rad2deg(nav.azel[i,0]), np.rad2deg(nav.azel[i,1]),
+                    nav.resp[i,f], nav.resc[i,f], nav.vsat[i,f], nav.SNR_rover[i,f],
+                    nav.fix[i,f], nav.slip[i,f], nav.lock[i,f], nav.outc[i,f],
+                    0, nav.rejc[i,f], nav.x[k],
+                    nav.P[k,k]));
+    
 def rtkinit(cfg):
     nav = gn.Nav(cfg)
     """ initalize RTK-GNSS parameters from config file """
@@ -34,7 +62,7 @@ def rtkinit(cfg):
     nav.P = np.zeros((nav.nx, nav.nx))
     nav.xa = np.zeros(nav.na)
     nav.Pa = np.zeros((nav.na, nav.na))
-    nav.el = np.zeros(uGNSS.MAXSAT)
+    nav.azel = np.zeros((uGNSS.MAXSAT, 2))
     nav.gf = np.zeros(uGNSS.MAXSAT)
     nav.ph = np.zeros((2, uGNSS.MAXSAT, nav.nf))
     nav.pt = np.empty((2, uGNSS.MAXSAT, nav.nf), dtype=object)
@@ -119,9 +147,8 @@ def zdres_sat(nav, obs, r, rtype, dant, ix):
         # residuals = observable - estimated range (phase and code)
         y[f] = obs.L[ix,f] * _c / freq - r - dant[f] if obs.L[ix,f] else 0
         y[f+nf] = obs.P[ix,f] - r - dant[f] if obs.P[ix,f] else 0
-#        if obs.L[ix,f] != 0 or obs.P[ix,f] != 0:
-#            trace(3, 'zdres_sat: %d: L=%.6f P=%.6f r=%.6f f=%.0f\n' % 
-#                  (obs.sat[ix],obs.L[ix,f], obs.P[ix,f],r,freq))
+        #trace(4, 'zdres_sat: %d: L=%.6f P=%.6f r=%.6f f=%.0f\n' % 
+        #         (obs.sat[ix],obs.L[ix,f], obs.P[ix,f],r,freq))
     return y
         
 def zdres(nav, obs, rs, dts, svh, var, rr, rtype):
@@ -146,7 +173,7 @@ def zdres(nav, obs, rs, dts, svh, var, rr, rtype):
     nf = nav.nf
     n = len(obs.P)
     y = np.zeros((n, nf * 2))
-    el = np.zeros(n)
+    azel = np.zeros((n,2))
     e = np.zeros((n, 3))
     rr_ = rr.copy()
     trace(3, 'zdres: n=%d rr=%.2f %.2f %.2f\n' % (n, rr[0], rr[1], rr[2]))
@@ -154,34 +181,35 @@ def zdres(nav, obs, rs, dts, svh, var, rr, rtype):
     # loop through satellites
     ix = np.argsort(obs.sat)
     for i in ix:
+        # excluded satellite? 
         if gn.satexclude(obs.sat[i], var[i], svh[i], nav):
             continue
         # compute geometric-range and azimuth/elevation angle
         r, e[i,:] = gn.geodist(rs[i,0:3], rr_)
-        _, el[i] = gn.satazel(pos, e[i,:])
-        if el[i] < nav.elmin:
+        azel[i] = gn.satazel(pos, e[i,:])
+        if azel[i,1] < nav.elmin:
             continue
         # adjust range for satellite clock-bias
         r += -_c * dts[i]
         # adjust range for troposphere delay model (hydrostatic)
         trophs, tropw, _ = gn.tropmodel(obs.t, pos, np.deg2rad(90.0), 0.0)
         zhd = trophs + tropw
-        mapfh, _ = gn.tropmapf(obs.t, pos, el[i])
+        mapfh, _ = gn.tropmapf(obs.t, pos, azel[i,1])
         r += mapfh * zhd
         # calc receiver antenna phase center correction
-        dant = gn.antmodel(nav, el[i], nav.nf, rtype)
-        trace(4,'sat=%d r=%.6f c*dts=%.6f zhd=%.6f map=%.6f\n' % (obs.sat[i],r,_c*dts[i],zhd,mapfh))
+        dant = gn.antmodel(nav, azel[i,1], nav.nf, rtype)
         # calc undifferenced phase/code residual for satellite
         y[i] = zdres_sat(nav, obs, r, rtype, dant, i)
-    
-    for i in ix:
-        if obs.L[i,0] != 0 and rtype == 0:
-            trace(4, 'sat=%2d %13.3f %13.3f %13.3f %13.10f %5.1f\n' %
-                  (obs.sat[i], rs[i,0], rs[i,1], rs[i,2], dts[i], 
-                   np.rad2deg(el[i])))
+        if obs.L[i,0] == 0 or rtype == 1: continue
+        trace(3, 'sat=%2d rs=%13.3f %13.3f %13.3f dts=%13.10f az=%6.1f el=%5.1f\n' %
+              (obs.sat[i], rs[i,0], rs[i,1], rs[i,2], dts[i], 
+               np.rad2deg(azel[i,0]), np.rad2deg(azel[i,1])))
+        trace(4,'sat=%d r=%.6f c*dts=%.6f zhd=%.6f map=%.6f\n' % 
+              (obs.sat[i], r,_c*dts[i],zhd,mapfh))
+
     
     tracemat(3, 'y=', y[ix,:].T, '13.3f')
-    return y, e, el
+    return y, e, azel
 
 
 def ddcov(nb, n, Ri, Rj, nv):
@@ -245,7 +273,7 @@ def varerr(nav, sys, el, f, dt, rcvstd, snr_rover, snr_base):
     return var
 
 
-def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
+def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr, save_res=False):
     """ /* double-differenced residuals and partial derivatives  -----------------------------------
         I nav  = sat nav data
         I dt = time diff between base and rover observations
@@ -268,6 +296,11 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
     H = np.zeros((nav.nx, ny))
     P_init = nav.sig_n0**2 # value used to initialize P states
     trace(3,"ddres   : dt=%.4f ns=%d\n" % (dt, ns))
+    
+    if save_res:
+        # zero out residual phase and code biases for all satellites
+        nav.resp.fill(0)
+        nav.resc.fill(0)
 
     nv = b = 0
     v = np.zeros(ny)
@@ -314,6 +347,13 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                 if sys == uGNSS.GLO and nav.glo_hwbias != 0:
                     df = (freqi - freqj) / nav.dfreq_glo[frq]
                     v[nv] -= df * nav.glo_hwbias
+
+                # save residuals
+                if save_res:
+                    if code:
+                        nav.resp[sat[j]-1,frq] = v[nv]
+                    else:
+                        nav.resc[sat[j]-1,frq] = v[nv]
                 
                 # use larger outlier thresh if just initialized phase
                 thresadj = 10 if (P[ii,ii] >= P_init or P[jj,jj] >= P_init) else 1
@@ -332,30 +372,17 @@ def ddres(nav, x, P, yr, er, yu, eu, sat, el, dt, obsr):
                 Rj[nv] = varerr(nav, sys, el[j], f, dt, nav.rcvstd[sj,f],
                         nav.SNR_rover[sj,frq], nav.SNR_base[sj,frq])
                 if not code:
+                    # increase variance if half cycle flags set 
+                    if nav.slip[si,frq] & 2: Ri[nv]+=0.01
+                    if nav.slip[sj,frq] & 2: Rj[nv]+=0.01
                     # set valid data flags
                     nav.vsat[si,frq] = nav.vsat[sj,frq] = 1
-                trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f lock=%2d x=%13.3f P=%.3f\n" %
+                trace(3,"sat=%3d-%3d %s%d v=%13.3f R=%9.6f %9.6f lock=%2d x=%.3f P=%.3f\n" %
                       (sat[i], sat[j], 'LP'[code], frq+1, v[nv], Ri[nv], Rj[nv],
                        nav.lock[sat[j]-1,frq], x[jj], P[jj,jj]))
                 nv += 1
                 nb[b] += 1
             b += 1
-            
-
-    # add constraint for fixed solution
-    # find matching timestamp in ground truth data
-    # t = round((obsr.t.time + obsr.t.sec + gn.leaps(0)) * 10)
-    # ix = np.where(nav.ground_truth[:,0] == t)[0][0]
-    # pos_truth = gn.pos2ecef(nav.ground_truth[ix,1:4], isdeg=True)
-    # pos_err = x[0:3] - pos_truth
-    # v[nv] = norm(pos_err)
-    # H[0:3, nv] = -pos_err / norm(pos_err)
-    # Ri[nv] = 0
-    # Rj[nv] = 1e-4
-    # nv += 1
-    # nb[b] +=1
-    # b+=1
-                            
     R = ddcov(nb, b, Ri[:nv], Rj[:nv], nv)
 
     return v[:nv], H[:,:nv], R
@@ -414,7 +441,7 @@ def ddidx(nav, sats):
                 if nav.x[i] == 0.0  or sys != m or nav.vsat[sati-1,f] == 0:
                     continue
                 if nav.lock[sati-1,f] >= 0 and nav.slip[sati-1,f] & 2 == 0 and \
-                        nav.el[sati-1] >= nav.elmaskar:
+                        nav.azel[sati-1,1] >= nav.elmaskar:
                     # set sat to use for fixing ambiguity if meets criteria
                     nav.fix[sati-1,f] = 2 # fix
                     break # break out of loop if find good sat
@@ -430,7 +457,7 @@ def ddidx(nav, sats):
                 if i == j or nav.x[j] == 0.0 or sys != m or nav.vsat[satj-1,f] <= 0:
                     continue
                 if nav.lock[satj-1,f] >= 0 and nav.slip[satj-1,f] & 2 == 0 and \
-                        nav.el[satj-1] >= nav.elmaskar:
+                        nav.azel[satj-1,1] >= nav.elmaskar:
                     # set D coeffs to subtract sat j from sat i
                     ix[nb, :] = [i,j] # state indices of ref bias and target bias
                     ref.append(sati)
@@ -452,6 +479,7 @@ def ddidx(nav, sats):
 
 def restamb(nav, bias, nb):
     """ restore SD ambiguity """
+    trace(3,"restamb :\n")
     nv = 0
     xa = nav.x.copy()
     xa[0:nav.na] = nav.xa[0:nav.na]
@@ -491,17 +519,17 @@ def resamb_lambda(nav, sats):
     DP = nav.P[ix[:, 0], na:nx] - nav.P[ix[:, 1], na:nx]
     Qb = DP[:, ix[:, 0] - na] - DP[:, ix[:, 1] - na]
     Qab = nav.P[0:na, ix[:, 0]] - nav.P[0:na, ix[:, 1]]
-    tracemat(3,'N(0)=      ', y, '7.3f')
+    tracemat(3,'N(0)=      ', y, '7.2f')
     tracemat(3, 'Qb*1000=   ', 1000 * np.diag(Qb[0:nb]), '7.4f')
 
     # MLAMBDA ILS
     b, s = mlambda(y, Qb)
-    tracemat(3,'N(1)=      ', b[:,0], '7.3f')
-    tracemat(3,'N(2)=      ', b[:,1], '7.3f')
+    tracemat(3,'N(1)=      ', b[:,0], '7.2f')
+    tracemat(3,'N(2)=      ', b[:,1], '7.2f')
     nav.ratio = s[1] / s[0]
     if s[0] <= 0.0 or nav.ratio >= nav.thresar:
-        trace(3,'resamb : validation OK (nb=%d ratio=%.2f\n s=%.2f/%.2f\n' 
-              % (nb, nav.ratio, s[1], s[0]))
+        trace(3,'resamb : validation ok (nb=%d ratio=%.2f thresh=%.2f s=%.2f/%.2f\n' 
+              % (nb, nav.ratio, nav.thresar, s[1], s[0]))
         nav.xa = nav.x[0:na].copy()
         nav.Pa = nav.P[0:na, 0:na].copy()
         bias = b[:, 0]
@@ -513,8 +541,8 @@ def resamb_lambda(nav, sats):
         # restore single diff ambiguity
         xa = restamb(nav, bias, nb)
     else:
-        trace(3,'ambiguity validation failed (nb=%d ratio=%.2f\n s=%.2f/%.2f'
-              % (nb, nav.ratio, s[1], s[0]))
+        trace(3,'ambiguity validation failed (nb=%d ratio=%.2f thresh=%.2f s=%.2f/%.2f'
+              % (nb, nav.ratio, nav.thresar, s[1], s[0]))
         nb = 0
     return nb, xa
 
@@ -690,7 +718,6 @@ def detslp_ll(nav, obs, ix, rcv):
                   (LLI[ixsat[ixL],f] & 2))[0]
         if len(hc_slip) > 0:
             slip[ixsat[ixL[hc_slip]],f] |= 1
-        
 
         ixslip = np.where((slip[ixsat[ixL],f] & 1) != 0)[0]
         slipsats = ixsat[ixL[ixslip]] + 1
@@ -700,9 +727,9 @@ def detslp_ll(nav, obs, ix, rcv):
         # output results to trace
 
         if len(slipsats) > 0:
-            trace(3, 'slip detected from LLI flags: f=%d, sats=%s\n' % (f, str(slipsats)))
-            trace(3, '   slip=%s\n' % str(slip[ixsat[ixL[ixslip]], f]))
-
+            trace(3, 'slip detected from LLI flags: f=%d, sats=%s slip=%s\n'
+                  % (f, str(slipsats), str(slip[ixsat[ixL[ixslip]], f])))
+    nav.slip = slip
 
 def udpos(nav, sol):
     """ states propagation for kalman filter """
@@ -728,7 +755,7 @@ def udpos(nav, sol):
     F[0:6, 3:9] += np.eye(6) * tt
     # include accel terms if filter is converged
     if posvar < nav.thresar1:
-        F[0:3, 6:9] += np.eye(3) * tt**2 / 2
+        F[0:3, 6:9] += np.eye(3) * np.sign(tt) * tt**2 / 2
     else:
         trace(3, 'pos var too high for accel term: %.4f\n' % posvar)
     # x=F*x, P=F*P*F
@@ -817,7 +844,7 @@ def udbias(nav, obsb, obsr, iu, ir):
             # set initial states of phase-bias
             freq = sat2freq(sat[i], f, nav)
             initx(nav, bias[i], nav.sig_n0**2, j)
-            nav.outc[sat[i]-1,f] = 1
+            nav.outc[sat[i]-1,f] = 1  # make equal to others set above
             nav.rejc[sat[i]-1,f] = 0
             nav.lock[sat[i]-1,f] = 0
             trace(3,"     sat=%3d, F=%d: init phase=%.3f\n" % (sat[i],f+1, bias[i]))
@@ -827,9 +854,7 @@ def udstate(nav, obsr, obsb, iu, ir, sol):
     """ temporal update of states """
     trace(3, 'udstate : ns=%d\n' % len(iu))
     # temporal update of position/velocity/acceleration
-    tracemat(4, 'before udstate x=', nav.x[0:9])
     udpos(nav, sol) # updates nav.x and nav.P
-    tracemat(4, 'after udstate x=', nav.x[0:9])
     # temporal update of phase-bias
     udbias(nav, obsb, obsr, iu, ir) # updates outxnav.x and nav.P
 
@@ -890,11 +915,8 @@ def relpos(nav, obsr, obsb, sol):
     
     # time diff between rover and base
     nav.dt = timediff(obsr.t, obsb.t)
-    ep = gn.time2epoch(obsr.t)
     trace(1,"\n---------------------------------------------------------\n")
-    trace(1, "relpos: nu=%d nr=%d\n" % (len(obsr.sat), len(obsb.sat)))
-    trace(1, '        teph= %04d/%02d/%02d %02d:%02d:%06.3f\n' %           
-          (ep[0], ep[1], ep[2], ep[3], ep[4], ep[5])) 
+    trace(1, "relpos: dt=%.3f nu=%d nr=%d\n" % (nav.dt, len(obsr.sat), len(obsb.sat)))
     trace(1,"---------------------------------------------------------\n")
     if abs(nav.dt) > nav.maxage:
         trace(3, 'Age of differential too large: %.2f\n' % nav.dt)
@@ -909,7 +931,7 @@ def relpos(nav, obsr, obsb, sol):
 
     # undifferenced residuals for base
     trace(3, 'base station:\n')
-    yr, er, elr = zdres(nav, obsb, rsb, dtsb, svhb, varb, nav.rb, 0)
+    yr, er, azelr = zdres(nav, obsb, rsb, dtsb, svhb, varb, nav.rb, 0)
     if nav.interp_base:
         # get residuals for previous base station obs
         yr0, _, _ = zdres(nav, nav.obsb, nav.rsb, nav.dtsb, nav.svhb, nav.varb,
@@ -918,13 +940,18 @@ def relpos(nav, obsr, obsb, sol):
         yr, nav.dt = intpres(obsr.t, nav, yr0, yr, nav.obsb, obsb)
     
     # find common sats between base and rover
-    ns, iu, ir = selsat(nav, obsr, obsb, elr)
+    ns, iu, ir = selsat(nav, obsr, obsb, azelr[:,1])
+    
+    # kalman filter time propagation
+    tracemat(3, 'before udstate: x=', nav.x[0:9], '.4f')
+    #tracemat(3, '  Pdiag=', np.diag(nav.P[:9,:9]), '.6f')
+    udstate(nav, obsr, obsb, iu, ir, sol)
+    tracemat(3, 'after udstate x=', nav.x[0:9], '.4f')
+    #tracemat(3, '  Pdiag=', np.diag(nav.P[:9,:9]), '.6f')
+    
     if ns <= 0:
         trace(3, 'no common sats: %d\n' % ns)
         return
-    
-    # kalman filter time propagation
-    udstate(nav, obsr, obsb, iu, ir, sol)
     
     # save SNR values
     for f in range(nav.nf):
@@ -933,7 +960,7 @@ def relpos(nav, obsr, obsb, sol):
 
     # undifferenced residuals for rover
     trace(3, 'rover: dt=%.3f\n' % nav.dt)
-    yu, eu, el = zdres(nav, obsr, rs, dts, svh, var, nav.x[0:3], 1)
+    yu, eu, azel = zdres(nav, obsr, rs, dts, svh, var, nav.x[0:3], 1)
     # decode stdevs from receiver
     rn.rcvstds(nav, obsr)
 
@@ -941,10 +968,11 @@ def relpos(nav, obsr, obsb, sol):
     yr, er = yr[ir,:], er[ir,:]
     yu, eu = yu[iu,:], eu[iu,:]
     sats = obsr.sat[iu]
-    els = nav.el[sats-1] = el[iu]
+    nav.azel[sats-1] = azel[iu]
+    els = azel[iu,1]
     
     # calculate double-differenced residuals and create state matrix from sat angles 
-    v, H, R = ddres(nav, nav.x, nav.P, yr, er, yu, eu, sats, els, nav.dt, obsr)
+    v, H, R = ddres(nav, nav.x, nav.P, yr, er, yu, eu, sats, els, nav.dt, obsr, True)
     
     if len(v) < 4:
         trace(3, 'not enough double-differenced residual\n')
@@ -954,9 +982,11 @@ def relpos(nav, obsr, obsb, sol):
     
     if stat != gn.SOLQ_NONE:
         # kalman filter measurement update, updates x,y,z,sat phase biases, etc
-        tracemat(3, 'before filter x=', nav.x[0:9])
+        tracemat(3, 'before filter x=', nav.x[0:9], '.4f')
+        #tracemat(3, '  Pdiag=', np.diag(nav.P[:9,:9]), '.6f')
         xp, Pp = gn.filter(nav.x, nav.P, H, v, R)
-        tracemat(3, 'after filter x=', xp[0:9])
+        tracemat(3, 'after filter x=', xp[0:9], '.4f')
+        #tracemat(3, '  Pdiag=', np.diag(Pp[:9,:9]), '.6f')
         posvar = np.sum(np.diag(Pp[0:3])) / 3
         trace(3,"posvar=%.6f \n" % posvar)
 
@@ -988,8 +1018,8 @@ def relpos(nav, obsr, obsb, sol):
         nb, xa = manage_amb_LAMBDA(nav, sats, stat, posvar)
         if nb > 0:
             # find zero-diff residuals for fixed solution 
-            yu, eu, el = zdres(nav, obsr, rs, dts, svh, var, xa[0:3], 1)
-            yu, eu, el = yu[iu, :], eu[iu, :], el[iu]
+            yu, eu, azel = zdres(nav, obsr, rs, dts, svh, var, xa[0:3], 1)
+            yu, eu, el = yu[iu, :], eu[iu, :], azel[iu,1]
             # post-fit residuals for fixed solution (xa includes fixed phase biases, rtk->xa does not) 
             v, H, R = ddres(nav, xa, nav.P, yr, er, yu, eu, sats, el, nav.dt, obsr)
             # validation of fixed solution, always returns valid
@@ -1040,7 +1070,7 @@ def relpos(nav, obsr, obsb, sol):
             nav.lock[ix,f] += 1
 
             
-def rtkpos(nav, rov, base, dir):
+def rtkpos(nav, rov, base, fp_stat, dir):
     """ relative positioning for PPK """
     trace(3, 'rtkpos: start solution, dir=%d\n' % dir)
     n = 0
@@ -1050,7 +1080,7 @@ def rtkpos(nav, rov, base, dir):
         if n== 0:
             # first epoch
             obsr, obsb = rn.first_obs(nav, rov, base, dir)
-            t = obsr.t
+            t = 0
             # force initial rover position (for align to RTKLIB)
             if dir == 1:
                 if cfg.rr_f[0] != 0:
@@ -1073,9 +1103,11 @@ def rtkpos(nav, rov, base, dir):
             sol = gn.Sol()
         if sol.t.time == 0:
             sol.t = obsr.t
-        nav.tt = timediff(sol.t, t) # timediff from previous epoch
+        if t != 0:
+            nav.tt = timediff(sol.t, t) # timediff from previous epoch
         # relative solution
         relpos(nav, obsr, obsb, sol)
+        outsolstat(nav, sol, fp_stat)
         ep = gn.time2epoch(sol.t)
         stdout.write('\r   %2d/%2d/%4d %02d:%02d:%05.2f: %d' % (ep[1], ep[2], ep[0],
                 ep[3], ep[4], ep[5], sol.stat))

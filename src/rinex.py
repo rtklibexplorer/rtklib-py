@@ -139,6 +139,9 @@ class rnx_decode:
                     eph.tot = gpst2time(eph.week, tot)
                     nav.eph.append(eph)
                 else:  # GLONASS
+                    if prn > uGNSS.GLOMAX:
+                        print('Reject nav entry: %s' % line[:3])
+                        break
                     geph = Geph(sat)
                     # Toc rounded by 15 min in utc 
                     week, tow = time2gpst(toc)
@@ -370,7 +373,7 @@ def next_obs(nav, rov, base, dir):
 def rcvstds(nav, obs):
     """ decode receiver stdevs from rinex fields """
     # skip if weighting factor is zero
-    if nav.err[3] == 0:
+    if nav.err[5] == 0:
         return
     for i in np.argsort(obs.sat):
         for f in range(nav.nf):

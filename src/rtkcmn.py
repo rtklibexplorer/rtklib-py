@@ -237,8 +237,10 @@ class Nav():
         self.slip = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
         self.prev_lli = np.zeros((uGNSS.MAXSAT, self.nf, 2), dtype=int)
         self.prev_fix = np.zeros((uGNSS.MAXSAT, self.nf), dtype=int)
-        self.rcvstd = np.zeros((uGNSS.MAXSAT, self.nf*2))
         self.glofrq = np.zeros(uGNSS.GLOMAX, dtype=int)
+        self.rcvstd = np.zeros((uGNSS.MAXSAT, self.nf*2))
+        self.resp = np.zeros((uGNSS.MAXSAT, self.nf))
+        self.resc = np.zeros((uGNSS.MAXSAT, self.nf))
         
         self.prev_ratio1 = 0
         self.prev_ratio2 = 0
@@ -597,17 +599,20 @@ def ecef2pos(r):
 def pos2ecef(pos, isdeg: bool = False):
     """ LLH (rad/deg) to ECEF position conversion  """
     if isdeg:
-        pos[0] *= np.pi/180.0
-        pos[1] *= np.pi/180.0
-    s_p = sin(pos[0])
-    c_p = cos(pos[0])
-    s_l = sin(pos[1])
-    c_l = cos(pos[1])
-    e2 = rCST.FE_WGS84 * (2.0 - rCST.FE_WGS84)
-    v = rCST.RE_WGS84 / sqrt(1.0 - e2 * s_p**2)
-    r = np.array([(v + pos[2]) * c_p*c_l,
-                  (v + pos[2]) * c_p*s_l,
-                  (v * (1.0 - e2) + pos[2]) * s_p])
+        s_p = sin(pos[0]*np.pi/180.0)
+        c_p = cos(pos[0]*np.pi/180.0)
+        s_l = sin(pos[1]*np.pi/180.0)
+        c_l = cos(pos[1]*np.pi/180.0)
+    else:
+        s_p = sin(pos[0])
+        c_p = cos(pos[0])
+        s_l = sin(pos[1])
+        c_l = cos(pos[1])
+        e2 = rCST.FE_WGS84 * (2.0 - rCST.FE_WGS84)
+        v = rCST.RE_WGS84 / sqrt(1.0 - e2 * s_p**2)
+        r = np.array([(v + pos[2]) * c_p*c_l,
+                      (v + pos[2]) * c_p*s_l,
+                      (v * (1.0 - e2) + pos[2]) * s_p])
     return r
 
 
@@ -616,6 +621,12 @@ def ecef2enu(pos, r):
     E = xyz2enu(pos)
     e = E @ r
     return e
+
+def enu2ecef(pos, e):
+    """ relative ECEF to ENU conversion """
+    E = xyz2enu(pos)
+    r = E.T @ e
+    return r
 
 def covenu(llh, P):
     """transform ecef covariance to local tangental coordinate --------------------------
@@ -659,9 +670,9 @@ def satazel(pos, e):
         az = atan2(enu[0], enu[1]) if np.dot(enu, enu) > 1e-12 else 0
         az = az if az > 0 else az + 2 * np.pi
         el = asin(enu[2])
-        return az, el
+        return [az, el]
     else:
-        return 0, np.pi / 2
+        return [0, np.pi / 2]
 
 
 def ionmodel(t, pos, az, el, ion=None):

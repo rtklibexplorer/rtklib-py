@@ -80,13 +80,13 @@ def savesol(sol, solfile):
                     s.stat, s.ns, std[1,1], std[0,0], std[2,2], std[0,1],
                     std[2,0], std[1,2], s.age, s.ratio))
 
-def procpos(nav, rov, base):
+def procpos(nav, rov, base, fp_stat):
  
     try:
         if nav.filtertype != 'backward':
             # run forward solution
             firstpos(nav, rov, base, dir=1)
-            rtkpos(nav, rov, base, dir=1) 
+            rtkpos(nav, rov, base, fp_stat, dir=1) 
             sol0 = deepcopy(nav.sol)
             savesol(sol0,'forward.pos')
         if nav.filtertype != 'forward':
@@ -105,7 +105,7 @@ def procpos(nav, rov, base):
                 firstpos(nav, rov, base, dir=-1)
             else: # combined_noreset
                 nav.sol = [nav.sol[-1]]
-            rtkpos(nav, rov, base, dir=-1)  
+            rtkpos(nav, rov, base, fp_stat, dir=-1)  
             savesol(nav.sol,'backward.pos')
         if nav.filtertype == 'combined' or nav.filtertype == 'combined_noreset':
             sol = combres(sol0, nav.sol)
