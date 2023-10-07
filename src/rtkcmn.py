@@ -219,7 +219,7 @@ class Nav():
         self.ion = ion_default
         self.rb = [0, 0, 0]  # base station position in ECEF [m]
         self.rr = [0, 0, 0]
-        self.stat = SOLQ_NONE   
+        self.stat = SOLQ_NONE
 
         # no ant pcv for now
         self.ant_pcv = 3*[19*[0]]
@@ -608,11 +608,11 @@ def pos2ecef(pos, isdeg: bool = False):
         c_p = cos(pos[0])
         s_l = sin(pos[1])
         c_l = cos(pos[1])
-        e2 = rCST.FE_WGS84 * (2.0 - rCST.FE_WGS84)
-        v = rCST.RE_WGS84 / sqrt(1.0 - e2 * s_p**2)
-        r = np.array([(v + pos[2]) * c_p*c_l,
-                      (v + pos[2]) * c_p*s_l,
-                      (v * (1.0 - e2) + pos[2]) * s_p])
+    e2 = rCST.FE_WGS84 * (2.0 - rCST.FE_WGS84)
+    v = rCST.RE_WGS84 / sqrt(1.0 - e2 * s_p**2)
+    r = np.array([(v + pos[2]) * c_p*c_l,
+                  (v + pos[2]) * c_p*s_l,
+                  (v * (1.0 - e2) + pos[2]) * s_p])
     return r
 
 
