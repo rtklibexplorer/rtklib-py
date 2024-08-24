@@ -22,7 +22,7 @@ interp_base = False      # interpolate base observations
 
 # ------------  Kalman Filter Statistics ------------------------
 eratio = [300, 300]      # ratio between psuedorange noise and carrier phase noise for L1, L2
-efact = {uGNSS.GPS: 1.0, uGNSS.GLO: 1.5, uGNSS.GAL: 1.0} # relative weighting of each constellation
+efact = {uGNSS.GPS: 1.0, uGNSS.GLO: 1.5, uGNSS.GAL: 1.0, uGNSS.BDS: 1.0} # relative weighting of each constellation
 err = [0, 0.003, 0.003, 0.0, 0, 0, 5e-12]  # error sigmas [-, base, el, bl, snr, rcvstd, satclk]
 snrmax = 52              # max signal strength for variance calc (dB-Hz)
 accelh = 3               # horiz accel noise sigma (m/sec2)
@@ -65,31 +65,34 @@ rr_b  = [0, 0, 0, 0, 0, 0]
 
 
 # ----------- Configure observation signals ----------------
-
-gnss_t = [uGNSS.GPS, uGNSS.GLO, uGNSS.GAL]
+gnss_t = [uGNSS.GPS, uGNSS.GAL, uGNSS.GLO]
 
 # Valid signals
 sig_tbl = {'1C': rSIG.L1C, '1X': rSIG.L1X, '1W': rSIG.L1W,
            '2W': rSIG.L2W, '2C': rSIG.L2C, '2X': rSIG.L2X,
            '5Q': rSIG.L5Q, '5X': rSIG.L5X, '7Q': rSIG.L7Q,
-           '7X': rSIG.L7X}
+           '7X': rSIG.L7X, '2I': rSIG.L2I, '7I': rSIG.L7I}
 
 skip_sig_tbl = {uGNSS.GPS: [],   # skip these obs
                 uGNSS.GLO: [],
                 uGNSS.GAL: [],
+                uGNSS.BDS: [],
                 uGNSS.QZS: []}
 
 # set these from table below
-freq_ix0 = {uGNSS.GPS: 0, uGNSS.GLO: 4, uGNSS.GAL: 0} # L1
-freq_ix1 = {uGNSS.GPS: 1, uGNSS.GLO: 5, uGNSS.GAL: 3} # L2/E5b
-
+freq_ix0 = {uGNSS.GPS: 0, uGNSS.GLO: 4, uGNSS.GAL: 0, uGNSS.BDS: 6} # L1
+freq_ix1 = {uGNSS.GPS: 1, uGNSS.GLO: 5, uGNSS.GAL: 3, uGNSS.BDS: 7} # L2/E5b
 # ---------- Frequencies currently supported-------------
 freq = [1.57542e9,   # L1/E1
         1.22760e9,   # L2
         1.17645e9,   # L5/E5a/B2a
         1.20714e9,   # E5b
         1.60200E9,   # G1
-        1.24600E9]   # G2
+        1.24600E9,   # G2
+        1.561098E9,  # B1I
+        1.20714E9,   # B2I/B2b
+        ]
+        
 dfreq_glo = [0.56250E6, 0.43750E6]  # L1, L2
 
 

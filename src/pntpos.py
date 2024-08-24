@@ -12,7 +12,7 @@ import rtkcmn as gn
 from ephemeris import seleph, satposs
 from rinex import rcvstds
 
-NX =        6           # num of estimated parameters, pos + clock
+NX =        4+4           # num of estimated parameters, pos + clock
 MAXITR =    10          #  max number of iteration or point pos
 ERR_ION =   5.0         #  ionospheric delay Std (m)
 ERR_TROP =  3.0         #  tropspheric delay Std (m)
@@ -122,6 +122,10 @@ def rescode(iter, obs, nav, rs, dts, svh, x):
             v[nv] -= x[5]
             H[nv, 5] = 1.0
             mask[2] = 1
+        elif sys == uGNSS.BDS:
+            v[nv] -= x[6]
+            H[nv, 6] = 1.0
+            mask[3] = 1
         else:
             mask[0] = 1
             

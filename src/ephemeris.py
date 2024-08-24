@@ -17,13 +17,14 @@ ERREPH_GLO = 5.0
 
 
 def seleph(nav, t, sat):
-    """ select ephemeric for sat, assumes ephemeris is sorted by sat, then time """
+    """ select ephemeric for sat, assume ephemeris is sorted by sat, then time """
     dt_p = 1e10 # timediff(t, nav.eph[nav.eph_index[sat]].toe)
     eph = None
-    sys = sat2prn(sat)[0]
-    i_p = 0
+    sys = sat2prn(sat)[0] 
+    i_p = 0 
     if sys != uGNSS.GLO:
         # start with previous index for this sat
+
         for i, eph_ in enumerate(nav.eph[nav.eph_index[sat]:]):
             if eph_.sat != sat:
                 continue
@@ -80,23 +81,28 @@ def sva2ura(sys, sva):
 
 def eph2pos(t, eph):
     """ broadcast ephemeris to satellite position and clock bias -------------
-* compute satellite position and clock bias with broadcast ephemeris (gps,
-* galileo, qzss)
-* args   : gtime_t time     I   time (gpst)
-*          eph_t *eph       I   broadcast ephemeris
-*          double *rs       O   satellite position (ecef) {x,y,z} (m)
-*          double *dts      O   satellite clock bias (s)
-*          double *var      O   satellite position and clock variance (m^2)
-* return : none
-* notes  : see ref [1],[7],[8]
-*          satellite clock includes relativity correction without code bias
-*          (tgd or bgd) """
+    * compute satellite position and clock bias with broadcast ephemeris (gps,
+    * galileo, qzss, bds)
+    * args   : gtime_t time     I   time (gpst)
+    *          eph_t *eph       I   broadcast ephemeris
+    *          double *rs       O   satellite position (ecef) {x,y,z} (m)
+    *          double *dts      O   satellite clock bias (s)
+    *          double *var      O   satellite position and clock variance (m^2)
+    * return : none
+    * notes  : see ref [1],[7],[8],[9]
+    *          satellite clock includes relativity correction without code bias
+    *          (tgd or bgd)
+    """
     tk = dtadjust(t, eph.toe)
-    sys, _ = sat2prn(eph.sat)
+    sys, prn = sat2prn(eph.sat)
+    
     if sys == uGNSS.GAL:
         mu = rCST.MU_GAL
         omge = rCST.OMGE_GAL
-    else:  # GPS,QZS
+    elif sys == uGNSS.BDS:
+        mu = rCST.MU_BDS
+        omge = rCST.OMGE_BDS
+    else:  # GPS, QZSS
         mu = rCST.MU_GPS
         omge = rCST.OMGE
 
@@ -122,16 +128,31 @@ def eph2pos(t, eph):
     x = r * np.cos(u)
     y = r * np.sin(u)
     cosi = np.cos(i)
-    O = eph.OMG0 + (eph.OMGd - omge) * tk - omge * eph.toes
-    sinO, cosO = np.sin(O), np.cos(O)
-    rs = [x * cosO - y * cosi * sinO, x * sinO + y * cosi * cosO, y * np.sin(i)]
+
+    if sys == uGNSS.BDS and (prn <= 145 or prn >= 199):
+        O = eph.OMG0 + eph.OMGd * tk - omge * eph.toes
+        sinO, cosO = np.sin(O), np.cos(O)
+        sin5, cos5 = np.sin(5), np.cos(5)
+        xg = x * cosO - y * cosi * sinO
+        yg = x * sinO + y * cosi * cosO
+        zg = y * np.sin(i)
+        sino = np.sin(omge * tk)
+        coso = np.cos(omge * tk)
+        rs = [xg * coso + yg * sino * cos5 + zg * sino * sin5,
+              -xg * sino + yg * coso * cos5 + zg * coso * sin5,
+              -yg * sin5 + zg * cos5]
+    else:
+        O = eph.OMG0 + (eph.OMGd - omge) * tk - omge * eph.toes
+        sinO, cosO = np.sin(O), np.cos(O)
+        rs = [x * cosO - y * cosi * sinO, x * sinO + y * cosi * cosO, y * np.sin(i)]
+    
     tk = dtadjust(t, eph.toc)
     dts = eph.f0 + eph.f1 * tk + eph.f2 * tk**2
     # relativity correction
-    dts -= 2 *np.sqrt(mu * eph.A) * eph.e * sinE / rCST.CLIGHT**2
+    dts -= 2 * np.sqrt(mu * eph.A) * eph.e * sinE / rCST.CLIGHT**2
     var = sva2ura(sys, eph.sva)
     trace(4, 'eph2pos: sat=%d, dts=%.10f rs=%.4f %.4f %.4f var=%.3f\n' % 
-          (eph.sat, dts,rs[0],rs[1],rs[2], var))
+          (eph.sat, dts, rs[0], rs[1], rs[2], var))
     return rs, var, dts
 
 def deq(x, acc):

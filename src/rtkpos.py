@@ -1010,7 +1010,7 @@ def relpos(nav, obsr, obsb, sol):
                 nav.ns = len(ix) # valid satellite count by L1
         # check for too few valid phases
         if nav.ns < 4:
-            stat = gn.SOLQ_DGPS;
+            stat = gn.SOLQ_DGPS
             
     # resolve integer ambiguity by LAMBDA 
     if nav.armode > 0 and stat == gn.SOLQ_FLOAT:

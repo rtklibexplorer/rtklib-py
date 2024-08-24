@@ -46,12 +46,14 @@ class rCST():
     MU_GPS = 3.9860050E14
     MU_GAL = 3.986004418E14
     MU_GLO = 3.9860044E14
+    MU_BDS = 3.986004418E14
     GME = 3.986004415E+14
     GMS = 1.327124E+20
     GMM = 4.902801E+12
     OMGE = 7.2921151467E-5
     OMGE_GAL = 7.2921151467E-5
     OMGE_GLO = 7.292115E-5
+    OMGE_BDS = 7.292115E-5 
     RE_WGS84 = 6378137.0
     RE_GLO = 6378136.0
     FE_WGS84 = (1.0/298.257223563)
@@ -77,10 +79,10 @@ class uGNSS(IntEnum):
     GALMAX = 36
     QZSMAX = 10
     GLOMAX = 27
-#    BDSMAX = 63
-#    SBSMAX = 24
-#    IRNMAX = 10
-    BDSMAX = 0
+    BDSMAX = 63
+    #SBSMAX = 24
+    #IRNMAX = 10
+    #BDSMAX = 0
     SBSMAX = 0
     IRNMAX = 0
     NONE = -1
@@ -120,14 +122,16 @@ class rSIG(IntEnum):
     L1C = 1
     L1X = 2
     L1W = 3
-    L2C = 4
-    L2L = 5
-    L2X = 6
-    L2W = 7
-    L5Q = 8
-    L5X = 9
-    L7Q = 10
-    L7X = 11
+    L2I = 4
+    L2C = 5
+    L2L = 6
+    L2X = 7
+    L2W = 8
+    L5Q = 9
+    L5X = 10
+    L7Q = 11
+    L7X = 12
+    L7I = 13
     SIGMAX = 16
 
 
@@ -164,6 +168,7 @@ class Eph():
     f2 = 0.0
     toc = 0
     toe = 0
+    ttr = 0
     tot = 0
     week = 0
     crs = 0.0
@@ -362,6 +367,10 @@ def timediff(t1: gtime_t, t2: gtime_t):
     return dt
 
 
+def bdt2gpst(t: gtime_t) -> gtime_t:
+    """Convert BeiDou time (BDT) to GPS time (GPST)"""
+    return timeadd(t, 14.0)
+
 def gpst2time(week, tow):
     """ convert to time from gps-time """
     t = epoch2time(gpst0)
@@ -422,7 +431,7 @@ def prn2sat(sys, prn):
     elif sys == uGNSS.GAL:
         sat = prn+uGNSS.GPSMAX+uGNSS.GLOMAX
     elif sys == uGNSS.BDS:
-        sat = prn+uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX
+        sat = prn-140+uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX
     elif sys == uGNSS.QZS:
         sat = prn-192+uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX+uGNSS.BDSMAX
     else:
@@ -436,7 +445,7 @@ def sat2prn(sat):
         prn = sat-(uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX+uGNSS.BDSMAX)+192
         sys = uGNSS.QZS
     elif sat > uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX:
-        prn = sat-(uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX)
+        prn = sat-(uGNSS.GPSMAX+uGNSS.GLOMAX+uGNSS.GALMAX)+140
         sys = uGNSS.BDS
     elif sat > uGNSS.GPSMAX+uGNSS.GLOMAX:
         prn = sat-(uGNSS.GPSMAX+uGNSS.GLOMAX)
@@ -457,6 +466,8 @@ def sat2id(sat):
                 uGNSS.QZS: 'J', uGNSS.GLO: 'R'}
     if sys == uGNSS.QZS:
         prn -= 192
+    elif sys == uGNSS.BDS:
+        prn -= 140
     elif sys == uGNSS.SBS:
         prn -= 100
     return '%s%02d' % (gnss_tbl[sys], prn)
@@ -464,18 +475,18 @@ def sat2id(sat):
 
 def id2sat(id_):
     """ convert id to satellite number """
-    # gnss_tbl={'G':uGNSS.GPS,'S':uGNSS.SBS,'E':uGNSS.GAL,'C':uGNSS.BDS,
-    #           'I':uGNSS.IRN,'J':uGNSS.QZS,'R':uGNSS.GLO}
-    gnss_tbl = {'G': uGNSS.GPS, 'E': uGNSS.GAL, 'C': uGNSS.BDS,
-                'J': uGNSS.QZS, 'R': uGNSS.GLO}
+    gnss_tbl={'G':uGNSS.GPS,'S':uGNSS.SBS,'E':uGNSS.GAL,'C':uGNSS.BDS,
+               'I':uGNSS.IRN,'J':uGNSS.QZS,'R':uGNSS.GLO}
+    #gnss_tbl = {'G': uGNSS.GPS, 'E': uGNSS.GAL, 'C': uGNSS.BDS,
+    #            'J': uGNSS.QZS, 'R': uGNSS.GLO}
     if id_[0] not in gnss_tbl:
         return -1
     sys = gnss_tbl[id_[0]]
     prn = int(id_[1:3])
     if sys == uGNSS.QZS:
         prn += 192
-    elif sys == uGNSS.SBS:
-        prn += 100
+    elif sys == uGNSS.BDS:
+        prn += 140
     sat = prn2sat(sys, prn)
     return sat
 
